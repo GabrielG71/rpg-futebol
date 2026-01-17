@@ -20,6 +20,7 @@ interface Player {
   number: number;
   assignedTo?: string;
   visibleTo: string[];
+  customImage?: string;
 }
 
 interface GameState {
@@ -30,6 +31,7 @@ interface GameState {
   ball: { x: number; y: number };
   displayTime: string;
   score: { blue: number; red: number };
+  fieldImage?: string;
 }
 
 interface RealPlayer {
@@ -57,28 +59,52 @@ export default function JogadorPage() {
       return;
     }
 
-    // Verificar se já tem info salva
+    // Registrar presença do jogador
+    const userInfo = {
+      name:
+        user.firstName ||
+        user.username ||
+        user.emailAddresses[0]?.emailAddress.split("@")[0] ||
+        "Jogador",
+      avatar: "👤",
+      isActive: false,
+      lastSeen: Date.now(),
+    };
+
     const existingInfo = localStorage.getItem(`user-info:${user.id}`);
     if (existingInfo) {
       const info = JSON.parse(existingInfo);
+      userInfo.isActive = info.isActive !== false;
       setIsActive(info.isActive !== false);
     } else {
-      // Salvar informações do usuário pela primeira vez
-      const userInfo = {
-        name:
-          user.firstName ||
-          user.username ||
-          user.emailAddresses[0]?.emailAddress.split("@")[0] ||
-          "Jogador",
-        avatar: "👤",
-        isActive: false,
-      };
-      localStorage.setItem(`user-info:${user.id}`, JSON.stringify(userInfo));
       setIsActive(false);
     }
 
+    localStorage.setItem(`user-info:${user.id}`, JSON.stringify(userInfo));
+
+    // Disparar evento para notificar o mestre
+    window.dispatchEvent(new Event("storage"));
+
     setLoading(false);
   }, [user, isLoaded, router]);
+
+  // Atualizar presença periodicamente
+  useEffect(() => {
+    if (!user) return;
+
+    const updatePresence = () => {
+      const existingInfo = localStorage.getItem(`user-info:${user.id}`);
+      if (existingInfo) {
+        const info = JSON.parse(existingInfo);
+        info.lastSeen = Date.now();
+        localStorage.setItem(`user-info:${user.id}`, JSON.stringify(info));
+        window.dispatchEvent(new Event("storage"));
+      }
+    };
+
+    const interval = setInterval(updatePresence, 2000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   const toggleActive = () => {
     if (!user) return;
@@ -94,8 +120,10 @@ export default function JogadorPage() {
         "Jogador",
       avatar: "👤",
       isActive: newActiveState,
+      lastSeen: Date.now(),
     };
     localStorage.setItem(`user-info:${user.id}`, JSON.stringify(userInfo));
+    window.dispatchEvent(new Event("storage"));
   };
 
   const goToMenu = () => {
@@ -104,6 +132,7 @@ export default function JogadorPage() {
     ) {
       if (user) {
         localStorage.removeItem(`user-role:${user.id}`);
+        localStorage.removeItem(`user-info:${user.id}`);
       }
       router.push("/");
     }
@@ -202,7 +231,6 @@ export default function JogadorPage() {
           </div>
         </div>
 
-        {/* Botão de Entrar/Sair mesmo sem jogo */}
         <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -401,16 +429,27 @@ export default function JogadorPage() {
         <div className="bg-gray-800 rounded-lg p-4 md:p-6">
           <h3 className="text-white font-bold mb-4">Campo de Jogo</h3>
           <div
-            className="relative w-full bg-green-700 rounded-lg overflow-hidden"
-            style={{ paddingBottom: "66.67%" }}
+            className="relative w-full rounded-lg overflow-hidden"
+            style={{
+              paddingBottom: "66.67%",
+              backgroundImage: gameState.fieldImage
+                ? `url(${gameState.fieldImage})`
+                : "none",
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              backgroundColor: gameState.fieldImage ? "transparent" : "#15803d",
+            }}
           >
             <div className="absolute inset-0">
-              <div className="absolute inset-0 border-4 border-white opacity-50"></div>
-              <div className="absolute left-1/2 top-0 bottom-0 w-1 bg-white opacity-50"></div>
-              <div className="absolute left-1/2 top-1/2 w-20 h-20 border-4 border-white rounded-full opacity-50 -translate-x-1/2 -translate-y-1/2"></div>
-
-              <div className="absolute left-0 top-1/2 w-2 h-24 bg-white opacity-70 -translate-y-1/2"></div>
-              <div className="absolute right-0 top-1/2 w-2 h-24 bg-white opacity-70 -translate-y-1/2"></div>
+              {!gameState.fieldImage && (
+                <>
+                  <div className="absolute inset-0 border-4 border-white opacity-50"></div>
+                  <div className="absolute left-1/2 top-0 bottom-0 w-1 bg-white opacity-50"></div>
+                  <div className="absolute left-1/2 top-1/2 w-20 h-20 border-4 border-white rounded-full opacity-50 -translate-x-1/2 -translate-y-1/2"></div>
+                  <div className="absolute left-0 top-1/2 w-2 h-24 bg-white opacity-70 -translate-y-1/2"></div>
+                  <div className="absolute right-0 top-1/2 w-2 h-24 bg-white opacity-70 -translate-y-1/2"></div>
+                </>
+              )}
 
               {totalVisiblePlayers === 0 && (
                 <div className="absolute inset-0 flex items-center justify-center">
@@ -433,9 +472,15 @@ export default function JogadorPage() {
                   <div
                     key={player.id}
                     style={{ left: `${player.x}%`, top: `${player.y}%` }}
-                    className="absolute w-8 h-8 md:w-10 md:h-10 bg-blue-500 border-2 border-white rounded-full flex flex-col items-center justify-center text-white font-bold text-xs transform -translate-x-1/2 -translate-y-1/2 shadow-lg transition-all group"
+                    className="absolute w-8 h-8 md:w-10 md:h-10 bg-blue-500 border-2 border-white rounded-full flex flex-col items-center justify-center text-white font-bold text-xs transform -translate-x-1/2 -translate-y-1/2 shadow-lg transition-all group overflow-hidden"
                   >
-                    {assignedPlayer ? (
+                    {player.customImage ? (
+                      <img
+                        src={player.customImage}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : assignedPlayer ? (
                       <div className="text-base md:text-lg">
                         {assignedPlayer.avatar}
                       </div>
@@ -457,9 +502,15 @@ export default function JogadorPage() {
                   <div
                     key={player.id}
                     style={{ left: `${player.x}%`, top: `${player.y}%` }}
-                    className="absolute w-8 h-8 md:w-10 md:h-10 bg-red-500 border-2 border-white rounded-full flex flex-col items-center justify-center text-white font-bold text-xs transform -translate-x-1/2 -translate-y-1/2 shadow-lg transition-all group"
+                    className="absolute w-8 h-8 md:w-10 md:h-10 bg-red-500 border-2 border-white rounded-full flex flex-col items-center justify-center text-white font-bold text-xs transform -translate-x-1/2 -translate-y-1/2 shadow-lg transition-all group overflow-hidden"
                   >
-                    {assignedPlayer ? (
+                    {player.customImage ? (
+                      <img
+                        src={player.customImage}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : assignedPlayer ? (
                       <div className="text-base md:text-lg">
                         {assignedPlayer.avatar}
                       </div>
