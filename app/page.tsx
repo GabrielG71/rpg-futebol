@@ -1,65 +1,138 @@
-import Image from "next/image";
+"use client";
+
+import { useUser, SignInButton, UserButton } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { Users, Trophy } from "lucide-react";
 
 export default function Home() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+  const { isSignedIn, user, isLoaded } = useUser();
+  const router = useRouter();
+  const [userRole, setUserRole] = useState<"mestre" | "jogador" | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function checkUserRole() {
+      if (!isSignedIn || !user) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const roleKey = `user-role:${user.id}`;
+        const result = await window.storage.get(roleKey);
+
+        if (result && result.value) {
+          const role = result.value as "mestre" | "jogador";
+          setUserRole(role);
+          // Redireciona automaticamente
+          router.push(`/${role}`);
+        }
+      } catch (error) {
+        console.log("Usuário novo, precisa escolher papel");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    if (isLoaded) {
+      checkUserRole();
+    }
+  }, [isSignedIn, user, isLoaded, router]);
+
+  const selectRole = async (role: "mestre" | "jogador") => {
+    if (!user) return;
+
+    setLoading(true);
+    try {
+      const roleKey = `user-role:${user.id}`;
+      await window.storage.set(roleKey, role);
+      setUserRole(role);
+      router.push(`/${role}`);
+    } catch (error) {
+      console.error("Erro ao salvar papel:", error);
+      setLoading(false);
+    }
+  };
+
+  if (!isLoaded || loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-900 via-green-700 to-emerald-900 flex items-center justify-center">
+        <div className="text-white text-2xl animate-pulse">
+          ⚽ Carregando...
+        </div>
+      </div>
+    );
+  }
+
+  if (!isSignedIn) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-900 via-green-700 to-emerald-900 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl shadow-2xl p-12 max-w-md w-full text-center transform hover:scale-105 transition-transform">
+          <div className="text-8xl mb-6 animate-bounce">⚽</div>
+          <h1 className="text-4xl font-bold text-gray-800 mb-3">
+            RPG de Futebol
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="text-gray-600 mb-8 text-lg">
+            Entre para começar sua partida épica!
           </p>
+          <SignInButton mode="modal">
+            <button className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-10 py-4 rounded-xl font-bold text-lg hover:from-green-700 hover:to-emerald-700 transition-all shadow-lg hover:shadow-xl">
+              Entrar / Cadastrar
+            </button>
+          </SignInButton>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </div>
+    );
+  }
+
+  if (userRole) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-900 via-green-700 to-emerald-900 flex items-center justify-center">
+        <div className="text-white text-2xl">⚽ Redirecionando...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-green-900 via-green-700 to-emerald-900 flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl shadow-2xl p-12 max-w-2xl w-full">
+        <div className="flex justify-between items-center mb-8">
+          <div className="text-6xl">⚽</div>
+          <UserButton afterSignOutUrl="/" />
         </div>
-      </main>
+
+        <h1 className="text-4xl font-bold text-gray-800 mb-3 text-center">
+          Bem-vindo, {user.firstName || "Jogador"}!
+        </h1>
+        <p className="text-gray-600 mb-10 text-center text-lg">
+          Escolha seu papel na partida:
+        </p>
+
+        <div className="grid md:grid-cols-2 gap-6">
+          <button
+            onClick={() => selectRole("mestre")}
+            className="group bg-gradient-to-br from-blue-500 to-blue-700 p-8 rounded-2xl text-white hover:from-blue-600 hover:to-blue-800 transition-all transform hover:scale-105 shadow-lg hover:shadow-2xl"
+          >
+            <Trophy className="w-16 h-16 mx-auto mb-4 group-hover:rotate-12 transition-transform" />
+            <h2 className="text-2xl font-bold mb-2">Mestre</h2>
+            <p className="text-blue-100 text-sm">
+              Controle o campo, o tempo e narr e a história
+            </p>
+          </button>
+
+          <button
+            onClick={() => selectRole("jogador")}
+            className="group bg-gradient-to-br from-red-500 to-red-700 p-8 rounded-2xl text-white hover:from-red-600 hover:to-red-800 transition-all transform hover:scale-105 shadow-lg hover:shadow-2xl"
+          >
+            <Users className="w-16 h-16 mx-auto mb-4 group-hover:rotate-12 transition-transform" />
+            <h2 className="text-2xl font-bold mb-2">Jogador</h2>
+            <p className="text-red-100 text-sm">
+              Visualize o campo e participe da partida
+            </p>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
