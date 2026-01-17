@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { storage } from "@/lib/firebase";
 
 interface Player {
   id: string;
@@ -49,10 +50,7 @@ export default function JogadorPage() {
 
   const registerPresence = async () => {
     try {
-      const existingInfo = await window.storage.get(
-        `user-info:${userId}`,
-        true,
-      );
+      const existingInfo = await storage.get(`user-info:${userId}`);
 
       const userInfo = {
         name: userName,
@@ -69,11 +67,7 @@ export default function JogadorPage() {
         setIsActive(false);
       }
 
-      await window.storage.set(
-        `user-info:${userId}`,
-        JSON.stringify(userInfo),
-        true,
-      );
+      await storage.set(`user-info:${userId}`, JSON.stringify(userInfo));
     } catch (error) {
       console.log("Erro ao registrar presença:", error);
       setIsActive(false);
@@ -83,18 +77,11 @@ export default function JogadorPage() {
   useEffect(() => {
     const updatePresence = async () => {
       try {
-        const existingInfo = await window.storage.get(
-          `user-info:${userId}`,
-          true,
-        );
+        const existingInfo = await storage.get(`user-info:${userId}`);
         if (existingInfo && existingInfo.value) {
           const info = JSON.parse(existingInfo.value);
           info.lastSeen = Date.now();
-          await window.storage.set(
-            `user-info:${userId}`,
-            JSON.stringify(info),
-            true,
-          );
+          await storage.set(`user-info:${userId}`, JSON.stringify(info));
         }
       } catch (error) {
         console.log("Erro ao atualizar presença:", error);
@@ -117,11 +104,7 @@ export default function JogadorPage() {
     };
 
     try {
-      await window.storage.set(
-        `user-info:${userId}`,
-        JSON.stringify(userInfo),
-        true,
-      );
+      await storage.set(`user-info:${userId}`, JSON.stringify(userInfo));
     } catch (error) {
       console.error("Erro ao atualizar status:", error);
     }
@@ -134,13 +117,13 @@ export default function JogadorPage() {
 
   const loadPlayers = async () => {
     try {
-      const result = await window.storage.list("user-info:", true);
+      const result = await storage.list("user-info:");
       if (result && result.keys) {
         const players: RealPlayer[] = [];
 
         for (const key of result.keys) {
           try {
-            const userInfo = await window.storage.get(key, true);
+            const userInfo = await storage.get(key);
             if (userInfo && userInfo.value) {
               const info = JSON.parse(userInfo.value);
               players.push({
@@ -163,7 +146,7 @@ export default function JogadorPage() {
 
   const loadGame = async () => {
     try {
-      const result = await window.storage.get("current-game", true);
+      const result = await storage.get("current-game");
       if (result && result.value) {
         const fullGame: GameState = JSON.parse(result.value);
 
@@ -173,7 +156,6 @@ export default function JogadorPage() {
           redTeam: fullGame.redTeam.length,
         });
 
-        // Verificar se a partida foi iniciada
         if (fullGame.gameStarted !== true) {
           console.log("⏸️ Partida ainda não iniciada");
           setGameState(null);
@@ -261,8 +243,20 @@ export default function JogadorPage() {
               Verificando a cada 1 segundo...
             </span>
           </div>
-          <div className="text-xs text-gray-600">
+          <div className="text-xs text-gray-600 mb-4">
             User ID: {userId.substring(0, 12)}...
+          </div>
+          <button
+            onClick={() => {
+              loadGame();
+              console.log("🔄 Atualização manual solicitada");
+            }}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg mb-2"
+          >
+            🔄 Forçar Atualização
+          </button>
+          <div className="text-xs text-gray-500">
+            Abra o console (F12) para ver logs de debug
           </div>
         </div>
 

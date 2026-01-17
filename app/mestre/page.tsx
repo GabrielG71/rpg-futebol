@@ -3,6 +3,7 @@
 import { useUser, UserButton } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
+import { storage } from "@/lib/firebase";
 import {
   RotateCcw,
   Users,
@@ -174,29 +175,29 @@ export default function MestrePage() {
 
   const loadGame = async () => {
     try {
-      const result = await window.storage.get("current-game", true);
+      const result = await storage.get("current-game");
       if (result && result.value) {
         const parsed = JSON.parse(result.value);
-        // Garantir que gameStarted existe
         if (parsed.gameStarted === undefined) {
           parsed.gameStarted = false;
         }
         setGameState(parsed);
+        console.log("✅ Jogo carregado do Firebase:", parsed);
       }
     } catch (error) {
-      console.log("Nenhum jogo salvo ainda");
+      console.log("Nenhum jogo salvo ainda:", error);
     }
   };
 
   const saveGame = async (state: typeof gameState) => {
     try {
-      console.log("💾 Salvando jogo:", {
+      console.log("💾 Salvando jogo no Firebase:", {
         gameStarted: state.gameStarted,
         blueTeam: state.blueTeam.length,
         redTeam: state.redTeam.length,
       });
-      await window.storage.set("current-game", JSON.stringify(state), true);
-      console.log("✅ Jogo salvo com sucesso!");
+      await storage.set("current-game", JSON.stringify(state));
+      console.log("✅ Jogo salvo com sucesso no Firebase!");
     } catch (error) {
       console.error("❌ Erro ao salvar jogo:", error);
     }
@@ -210,13 +211,13 @@ export default function MestrePage() {
 
   const loadConnectedPlayers = async () => {
     try {
-      const result = await window.storage.list("user-info:", true);
+      const result = await storage.list("user-info:");
       if (result && result.keys) {
         const players: RealPlayer[] = [];
 
         for (const key of result.keys) {
           try {
-            const userInfo = await window.storage.get(key, true);
+            const userInfo = await storage.get(key);
             if (userInfo && userInfo.value) {
               const info = JSON.parse(userInfo.value);
               const now = Date.now();
@@ -348,7 +349,12 @@ export default function MestrePage() {
   };
 
   const startGame = () => {
-    setGameState((prev) => ({ ...prev, gameStarted: true }));
+    console.log("🎮 Iniciando partida...");
+    setGameState((prev) => {
+      const newState = { ...prev, gameStarted: true };
+      console.log("✅ gameStarted agora é:", newState.gameStarted);
+      return newState;
+    });
   };
 
   const endGame = () => {
@@ -404,7 +410,7 @@ export default function MestrePage() {
     }));
 
     try {
-      await window.storage.delete(`user-info:${playerId}`, true);
+      await storage.delete(`user-info:${playerId}`);
     } catch (error) {
       console.log("Erro ao remover jogador:", error);
     }
