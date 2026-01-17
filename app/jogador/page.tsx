@@ -3,7 +3,7 @@
 import { useUser, UserButton } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { Users, Clock, Eye, RefreshCw } from "lucide-react";
+import { Users, Clock, Eye, LogIn, LogOut, RefreshCw } from "lucide-react";
 
 interface Player {
   id: string;
@@ -36,6 +36,7 @@ export default function JogadorPage() {
   const [loading, setLoading] = useState(true);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [realPlayers, setRealPlayers] = useState<RealPlayer[]>([]);
+  const [isActive, setIsActive] = useState(false);
 
   useEffect(() => {
     if (!isLoaded || !user) return;
@@ -48,17 +49,47 @@ export default function JogadorPage() {
       return;
     }
 
-    // Salvar informações do usuário para o mestre ver
-    const userInfo = {
-      name: user.firstName || user.username || "Jogador",
-      avatar: user.imageUrl ? "🎮" : "👤",
-    };
-    localStorage.setItem(`user-info:${user.id}`, JSON.stringify(userInfo));
+    // Verificar se já tem info salva
+    const existingInfo = localStorage.getItem(`user-info:${user.id}`);
+    if (existingInfo) {
+      const info = JSON.parse(existingInfo);
+      setIsActive(info.isActive !== false);
+    } else {
+      // Salvar informações do usuário pela primeira vez
+      const userInfo = {
+        name:
+          user.firstName ||
+          user.username ||
+          user.emailAddresses[0]?.emailAddress.split("@")[0] ||
+          "Jogador",
+        avatar: "👤",
+        isActive: false,
+      };
+      localStorage.setItem(`user-info:${user.id}`, JSON.stringify(userInfo));
+      setIsActive(false);
+    }
 
     setLoading(false);
   }, [user, isLoaded, router]);
 
-  // Carregar lista de jogadores
+  const toggleActive = () => {
+    if (!user) return;
+
+    const newActiveState = !isActive;
+    setIsActive(newActiveState);
+
+    const userInfo = {
+      name:
+        user.firstName ||
+        user.username ||
+        user.emailAddresses[0]?.emailAddress.split("@")[0] ||
+        "Jogador",
+      avatar: "👤",
+      isActive: newActiveState,
+    };
+    localStorage.setItem(`user-info:${user.id}`, JSON.stringify(userInfo));
+  };
+
   useEffect(() => {
     const loadPlayers = () => {
       const players: RealPlayer[] = [];
@@ -85,7 +116,6 @@ export default function JogadorPage() {
     loadPlayers();
   }, []);
 
-  // Carregar estado do jogo a cada 1 segundo
   useEffect(() => {
     if (!user) return;
 
@@ -127,8 +157,8 @@ export default function JogadorPage() {
 
   if (!gameState) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
-        <div className="text-center">
+      <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4">
+        <div className="text-center mb-8">
           <div className="text-6xl mb-4 animate-bounce">⚽</div>
           <div className="text-white text-2xl mb-2">
             Aguardando o mestre iniciar a partida...
@@ -140,6 +170,48 @@ export default function JogadorPage() {
             <RefreshCw className="w-4 h-4 text-green-400 animate-spin" />
             <span className="text-green-400 text-sm">Verificando...</span>
           </div>
+        </div>
+
+        {/* Botão de Entrar/Sair mesmo sem jogo */}
+        <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-white font-bold">Status da Partida</h3>
+              <p className="text-gray-400 text-sm">
+                {isActive ? "Você está participando" : "Você está assistindo"}
+              </p>
+            </div>
+            <div
+              className={`w-3 h-3 rounded-full ${isActive ? "bg-green-400 animate-pulse" : "bg-gray-500"}`}
+            ></div>
+          </div>
+
+          <button
+            onClick={toggleActive}
+            className={`w-full px-6 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all ${
+              isActive
+                ? "bg-red-600 hover:bg-red-700 text-white"
+                : "bg-green-600 hover:bg-green-700 text-white"
+            }`}
+          >
+            {isActive ? (
+              <>
+                <LogOut className="w-5 h-5" />
+                Sair da Partida
+              </>
+            ) : (
+              <>
+                <LogIn className="w-5 h-5" />
+                Entrar na Partida
+              </>
+            )}
+          </button>
+
+          <p className="text-gray-500 text-xs text-center mt-3">
+            {isActive
+              ? "O mestre poderá te atribuir a uma posição no campo"
+              : "Você pode assistir a partida sem participar"}
+          </p>
         </div>
       </div>
     );
@@ -161,11 +233,53 @@ export default function JogadorPage() {
                 Visualização
               </h1>
               <p className="text-gray-400 text-sm md:text-base">
-                Bem-vindo, {user?.firstName || "Jogador"}!
+                Bem-vindo, {user?.firstName || user?.username || "Jogador"}!
               </p>
             </div>
           </div>
           <UserButton afterSignOutUrl="/" />
+        </div>
+
+        {/* Status e Botão Entrar/Sair */}
+        <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div
+                className={`w-4 h-4 rounded-full ${isActive ? "bg-green-400 animate-pulse" : "bg-gray-500"}`}
+              ></div>
+              <div>
+                <div className="text-white font-bold">
+                  {isActive ? "🎮 Participante Ativo" : "👁️ Espectador"}
+                </div>
+                <div className="text-gray-400 text-sm">
+                  {isActive
+                    ? "O mestre pode te colocar em jogo"
+                    : "Você está apenas assistindo"}
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={toggleActive}
+              className={`px-6 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all whitespace-nowrap ${
+                isActive
+                  ? "bg-red-600 hover:bg-red-700 text-white"
+                  : "bg-green-600 hover:bg-green-700 text-white"
+              }`}
+            >
+              {isActive ? (
+                <>
+                  <LogOut className="w-5 h-5" />
+                  Sair da Partida
+                </>
+              ) : (
+                <>
+                  <LogIn className="w-5 h-5" />
+                  Entrar na Partida
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Informações do Jogo */}
@@ -242,16 +356,13 @@ export default function JogadorPage() {
             style={{ paddingBottom: "66.67%" }}
           >
             <div className="absolute inset-0">
-              {/* Linhas do campo */}
               <div className="absolute inset-0 border-4 border-white opacity-50"></div>
               <div className="absolute left-1/2 top-0 bottom-0 w-1 bg-white opacity-50"></div>
               <div className="absolute left-1/2 top-1/2 w-20 h-20 border-4 border-white rounded-full opacity-50 -translate-x-1/2 -translate-y-1/2"></div>
 
-              {/* Gols */}
               <div className="absolute left-0 top-1/2 w-2 h-24 bg-white opacity-70 -translate-y-1/2"></div>
               <div className="absolute right-0 top-1/2 w-2 h-24 bg-white opacity-70 -translate-y-1/2"></div>
 
-              {/* Mensagem se não houver jogadores visíveis */}
               {totalVisiblePlayers === 0 && (
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="bg-gray-900 bg-opacity-90 rounded-lg p-6 text-center">
@@ -267,7 +378,6 @@ export default function JogadorPage() {
                 </div>
               )}
 
-              {/* Jogadores Time Azul (apenas visíveis) */}
               {gameState.blueTeam.map((player) => {
                 const assignedPlayer = getPlayerById(player.assignedTo);
                 return (
@@ -292,7 +402,6 @@ export default function JogadorPage() {
                 );
               })}
 
-              {/* Jogadores Time Vermelho (apenas visíveis) */}
               {gameState.redTeam.map((player) => {
                 const assignedPlayer = getPlayerById(player.assignedTo);
                 return (
@@ -317,7 +426,6 @@ export default function JogadorPage() {
                 );
               })}
 
-              {/* Bola */}
               <div
                 style={{
                   left: `${gameState.ball.x}%`,
