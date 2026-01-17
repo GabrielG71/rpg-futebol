@@ -12,43 +12,30 @@ export default function JogadorPage() {
   const [gameState, setGameState] = useState<any>(null);
 
   useEffect(() => {
-    async function checkRole() {
-      if (!isLoaded || !user) return;
+    if (!isLoaded || !user) return;
 
-      try {
-        const roleKey = `user-role:${user.id}`;
-        const result = await window.storage.get(roleKey);
+    const roleKey = `user-role:${user.id}`;
+    const savedRole = localStorage.getItem(roleKey);
 
-        if (!result || result.value !== "jogador") {
-          router.push("/");
-          return;
-        }
-      } catch (error) {
-        router.push("/");
-        return;
-      }
-
-      setLoading(false);
+    if (savedRole !== "jogador") {
+      router.push("/");
+      return;
     }
 
-    checkRole();
+    setLoading(false);
   }, [user, isLoaded, router]);
 
-  // Carregar estado do jogo a cada 2 segundos
+  // Carregar estado do jogo a cada 1 segundo
   useEffect(() => {
-    const loadGame = async () => {
-      try {
-        const result = await window.storage.get("current-game", true);
-        if (result && result.value) {
-          setGameState(JSON.parse(result.value));
-        }
-      } catch (error) {
-        console.log("Aguardando jogo começar...");
+    const loadGame = () => {
+      const gameData = localStorage.getItem("current-game");
+      if (gameData) {
+        setGameState(JSON.parse(gameData));
       }
     };
 
     loadGame();
-    const interval = setInterval(loadGame, 2000);
+    const interval = setInterval(loadGame, 1000);
 
     return () => clearInterval(interval);
   }, []);
