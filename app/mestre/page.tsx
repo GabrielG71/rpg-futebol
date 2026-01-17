@@ -542,7 +542,7 @@ export default function MestrePage() {
               </button>
             </div>
           </div>
-        )}
+        )
 
         {/* Só mostra os controles se a partida estiver iniciada */}
         {gameState.gameStarted && (
