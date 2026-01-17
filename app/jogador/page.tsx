@@ -3,7 +3,15 @@
 import { useUser, UserButton } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { Users, Clock, Eye, LogIn, LogOut, RefreshCw } from "lucide-react";
+import {
+  Users,
+  Clock,
+  Eye,
+  LogIn,
+  LogOut,
+  RefreshCw,
+  Home,
+} from "lucide-react";
 
 interface Player {
   id: string;
@@ -90,58 +98,72 @@ export default function JogadorPage() {
     localStorage.setItem(`user-info:${user.id}`, JSON.stringify(userInfo));
   };
 
-  useEffect(() => {
-    const loadPlayers = () => {
-      const players: RealPlayer[] = [];
+  const goToMenu = () => {
+    if (
+      confirm("Voltar ao menu? Você precisará escolher sua função novamente.")
+    ) {
+      if (user) {
+        localStorage.removeItem(`user-role:${user.id}`);
+      }
+      router.push("/");
+    }
+  };
 
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith("user-info:")) {
-          const userId = key.replace("user-info:", "");
-          const userInfo = localStorage.getItem(key);
-          if (userInfo) {
-            const info = JSON.parse(userInfo);
-            players.push({
-              id: userId,
-              name: info.name,
-              avatar: info.avatar || "👤",
-            });
-          }
+  const refreshGame = () => {
+    loadPlayers();
+    loadGame();
+  };
+
+  const loadPlayers = () => {
+    const players: RealPlayer[] = [];
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith("user-info:")) {
+        const userId = key.replace("user-info:", "");
+        const userInfo = localStorage.getItem(key);
+        if (userInfo) {
+          const info = JSON.parse(userInfo);
+          players.push({
+            id: userId,
+            name: info.name,
+            avatar: info.avatar || "👤",
+          });
         }
       }
+    }
 
-      setRealPlayers(players);
-    };
+    setRealPlayers(players);
+  };
 
+  const loadGame = () => {
+    if (!user) return;
+
+    const gameData = localStorage.getItem("current-game");
+    if (gameData) {
+      const fullGame: GameState = JSON.parse(gameData);
+
+      // Filtrar apenas jogadores visíveis para este jogador
+      const filteredGame = {
+        ...fullGame,
+        blueTeam: fullGame.blueTeam.filter((p) =>
+          p.visibleTo.includes(user.id),
+        ),
+        redTeam: fullGame.redTeam.filter((p) => p.visibleTo.includes(user.id)),
+      };
+
+      setGameState(filteredGame);
+    }
+  };
+
+  useEffect(() => {
     loadPlayers();
   }, []);
 
   useEffect(() => {
     if (!user) return;
-
-    const loadGame = () => {
-      const gameData = localStorage.getItem("current-game");
-      if (gameData) {
-        const fullGame: GameState = JSON.parse(gameData);
-
-        // Filtrar apenas jogadores visíveis para este jogador
-        const filteredGame = {
-          ...fullGame,
-          blueTeam: fullGame.blueTeam.filter((p) =>
-            p.visibleTo.includes(user.id),
-          ),
-          redTeam: fullGame.redTeam.filter((p) =>
-            p.visibleTo.includes(user.id),
-          ),
-        };
-
-        setGameState(filteredGame);
-      }
-    };
-
     loadGame();
     const interval = setInterval(loadGame, 1000);
-
     return () => clearInterval(interval);
   }, [user]);
 
@@ -158,6 +180,14 @@ export default function JogadorPage() {
   if (!gameState) {
     return (
       <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4">
+        <button
+          onClick={goToMenu}
+          className="absolute top-4 left-4 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+        >
+          <Home className="w-4 h-4" />
+          Voltar ao Menu
+        </button>
+
         <div className="text-center mb-8">
           <div className="text-6xl mb-4 animate-bounce">⚽</div>
           <div className="text-white text-2xl mb-2">
@@ -237,7 +267,16 @@ export default function JogadorPage() {
               </p>
             </div>
           </div>
-          <UserButton afterSignOutUrl="/" />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={goToMenu}
+              className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg flex items-center gap-2"
+            >
+              <Home className="w-4 h-4" />
+              <span className="hidden sm:inline">Menu</span>
+            </button>
+            <UserButton afterSignOutUrl="/" />
+          </div>
         </div>
 
         {/* Status e Botão Entrar/Sair */}
@@ -259,26 +298,36 @@ export default function JogadorPage() {
               </div>
             </div>
 
-            <button
-              onClick={toggleActive}
-              className={`px-6 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all whitespace-nowrap ${
-                isActive
-                  ? "bg-red-600 hover:bg-red-700 text-white"
-                  : "bg-green-600 hover:bg-green-700 text-white"
-              }`}
-            >
-              {isActive ? (
-                <>
-                  <LogOut className="w-5 h-5" />
-                  Sair da Partida
-                </>
-              ) : (
-                <>
-                  <LogIn className="w-5 h-5" />
-                  Entrar na Partida
-                </>
-              )}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={refreshGame}
+                className="px-4 py-3 rounded-lg font-bold flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white transition-all"
+              >
+                <RefreshCw className="w-5 h-5" />
+                <span className="hidden sm:inline">Atualizar</span>
+              </button>
+
+              <button
+                onClick={toggleActive}
+                className={`px-6 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all whitespace-nowrap ${
+                  isActive
+                    ? "bg-red-600 hover:bg-red-700 text-white"
+                    : "bg-green-600 hover:bg-green-700 text-white"
+                }`}
+              >
+                {isActive ? (
+                  <>
+                    <LogOut className="w-5 h-5" />
+                    Sair da Partida
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="w-5 h-5" />
+                    Entrar na Partida
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
 
