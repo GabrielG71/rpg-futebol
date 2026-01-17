@@ -4,8 +4,6 @@ import { useUser, UserButton } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import {
-  Play,
-  Pause,
   RotateCcw,
   Users,
   Clock,
@@ -15,6 +13,9 @@ import {
   X,
   Check,
   Trash2,
+  Home,
+  Grid3x3,
+  RefreshCw,
 } from "lucide-react";
 
 interface Player {
@@ -33,6 +34,94 @@ interface RealPlayer {
   isActive: boolean;
 }
 
+const FORMATIONS = {
+  "3-4-3": [
+    // Goleiro
+    { x: 10, y: 50 },
+    // Defesa (3)
+    { x: 20, y: 25 },
+    { x: 20, y: 50 },
+    { x: 20, y: 75 },
+    // Meio (4)
+    { x: 35, y: 20 },
+    { x: 35, y: 40 },
+    { x: 35, y: 60 },
+    { x: 35, y: 80 },
+    // Ataque (3)
+    { x: 45, y: 30 },
+    { x: 45, y: 50 },
+    { x: 45, y: 70 },
+  ],
+  "4-2-4": [
+    // Goleiro
+    { x: 10, y: 50 },
+    // Defesa (4)
+    { x: 20, y: 20 },
+    { x: 20, y: 40 },
+    { x: 20, y: 60 },
+    { x: 20, y: 80 },
+    // Meio (2)
+    { x: 32, y: 40 },
+    { x: 32, y: 60 },
+    // Ataque (4)
+    { x: 45, y: 20 },
+    { x: 45, y: 40 },
+    { x: 45, y: 60 },
+    { x: 45, y: 80 },
+  ],
+  "4-4-2": [
+    // Goleiro
+    { x: 10, y: 50 },
+    // Defesa (4)
+    { x: 20, y: 20 },
+    { x: 20, y: 40 },
+    { x: 20, y: 60 },
+    { x: 20, y: 80 },
+    // Meio (4)
+    { x: 32, y: 20 },
+    { x: 32, y: 40 },
+    { x: 32, y: 60 },
+    { x: 32, y: 80 },
+    // Ataque (2)
+    { x: 45, y: 40 },
+    { x: 45, y: 60 },
+  ],
+  "4-3-3": [
+    // Goleiro
+    { x: 10, y: 50 },
+    // Defesa (4)
+    { x: 20, y: 20 },
+    { x: 20, y: 40 },
+    { x: 20, y: 60 },
+    { x: 20, y: 80 },
+    // Meio (3)
+    { x: 32, y: 30 },
+    { x: 32, y: 50 },
+    { x: 32, y: 70 },
+    // Ataque (3)
+    { x: 45, y: 30 },
+    { x: 45, y: 50 },
+    { x: 45, y: 70 },
+  ],
+  "5-4-1": [
+    // Goleiro
+    { x: 10, y: 50 },
+    // Defesa (5)
+    { x: 20, y: 15 },
+    { x: 20, y: 35 },
+    { x: 20, y: 50 },
+    { x: 20, y: 65 },
+    { x: 20, y: 85 },
+    // Meio (4)
+    { x: 32, y: 25 },
+    { x: 32, y: 42 },
+    { x: 32, y: 58 },
+    { x: 32, y: 75 },
+    // Ataque (1)
+    { x: 45, y: 50 },
+  ],
+};
+
 export default function MestrePage() {
   const { user, isLoaded } = useUser();
   const router = useRouter();
@@ -44,6 +133,10 @@ export default function MestrePage() {
   const [editingTime, setEditingTime] = useState(false);
   const [tempTime, setTempTime] = useState("");
   const [realPlayers, setRealPlayers] = useState<RealPlayer[]>([]);
+  const [showFormations, setShowFormations] = useState(false);
+  const [selectedTeamForFormation, setSelectedTeamForFormation] = useState<
+    "blue" | "red" | null
+  >(null);
 
   useEffect(() => {
     if (!isLoaded || !user) return;
@@ -65,6 +158,17 @@ export default function MestrePage() {
     loadConnectedPlayers();
     setLoading(false);
   }, [user, isLoaded, router]);
+
+  const goToMenu = () => {
+    if (
+      confirm("Voltar ao menu? Você precisará escolher sua função novamente.")
+    ) {
+      if (user) {
+        localStorage.removeItem(`user-role:${user.id}`);
+      }
+      router.push("/");
+    }
+  };
 
   const loadConnectedPlayers = () => {
     const players: RealPlayer[] = [];
@@ -129,6 +233,26 @@ export default function MestrePage() {
     const interval = setInterval(loadConnectedPlayers, 3000);
     return () => clearInterval(interval);
   }, []);
+
+  const applyFormation = (
+    formationName: keyof typeof FORMATIONS,
+    team: "blue" | "red",
+  ) => {
+    const formation = FORMATIONS[formationName];
+    const teamKey = team === "blue" ? "blueTeam" : "redTeam";
+
+    setGameState((prev) => ({
+      ...prev,
+      [teamKey]: prev[teamKey].map((player, index) => ({
+        ...player,
+        x: team === "blue" ? formation[index].x : 100 - formation[index].x,
+        y: formation[index].y,
+      })),
+    }));
+
+    setShowFormations(false);
+    setSelectedTeamForFormation(null);
+  };
 
   const handleMouseDown = (id: string) => {
     setDragging(id);
@@ -227,7 +351,6 @@ export default function MestrePage() {
   const removePlayer = (playerId: string) => {
     if (!confirm("Remover este jogador da partida?")) return;
 
-    // Remover atribuições deste jogador
     setGameState((prev) => ({
       ...prev,
       blueTeam: prev.blueTeam.map((p) =>
@@ -238,7 +361,6 @@ export default function MestrePage() {
       ),
     }));
 
-    // Remover dados do jogador
     localStorage.removeItem(`user-info:${playerId}`);
     localStorage.removeItem(`user-role:${playerId}`);
 
@@ -284,7 +406,16 @@ export default function MestrePage() {
               </p>
             </div>
           </div>
-          <UserButton afterSignOutUrl="/" />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={goToMenu}
+              className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg flex items-center gap-2"
+            >
+              <Home className="w-4 h-4" />
+              <span className="hidden sm:inline">Menu</span>
+            </button>
+            <UserButton afterSignOutUrl="/" />
+          </div>
         </div>
 
         {/* Controles */}
@@ -436,18 +567,25 @@ export default function MestrePage() {
             <div className="bg-gray-700 rounded-lg p-4">
               <h3 className="text-white font-bold mb-3">Ações</h3>
               <button
-                onClick={resetGame}
-                className="w-full bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded flex items-center justify-center gap-2 mb-2"
+                onClick={() => setShowFormations(true)}
+                className="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded flex items-center justify-center gap-2 mb-2"
               >
-                <RotateCcw className="w-4 h-4" />
-                Resetar Jogo
+                <Grid3x3 className="w-4 h-4" />
+                Formações
               </button>
               <button
                 onClick={loadConnectedPlayers}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center justify-center gap-2 mb-2"
               >
-                <Users className="w-4 h-4" />
+                <RefreshCw className="w-4 h-4" />
                 Atualizar Jogadores
+              </button>
+              <button
+                onClick={resetGame}
+                className="w-full bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded flex items-center justify-center gap-2 mb-2"
+              >
+                <RotateCcw className="w-4 h-4" />
+                Resetar Jogo
               </button>
               <div className="text-green-400 text-sm text-center mt-2">
                 ✓ Salvando automaticamente
@@ -603,7 +741,105 @@ export default function MestrePage() {
         </div>
       </div>
 
-      {/* Modal */}
+      {/* Modal de Formações */}
+      {showFormations && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50"
+          onClick={() => {
+            setShowFormations(false);
+            setSelectedTeamForFormation(null);
+          }}
+        >
+          <div
+            className="bg-gray-800 rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-white font-bold text-xl flex items-center gap-2">
+                <Grid3x3 className="w-6 h-6" />
+                Formações Táticas
+              </h3>
+              <button
+                onClick={() => {
+                  setShowFormations(false);
+                  setSelectedTeamForFormation(null);
+                }}
+                className="text-gray-400 hover:text-white"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {!selectedTeamForFormation ? (
+              <div className="space-y-3">
+                <p className="text-gray-300 mb-4">
+                  Escolha um time para aplicar a formação:
+                </p>
+                <button
+                  onClick={() => setSelectedTeamForFormation("blue")}
+                  className="w-full p-4 bg-blue-600 hover:bg-blue-700 rounded-lg text-white font-bold flex items-center justify-center gap-2"
+                >
+                  <Users className="w-5 h-5" />
+                  {gameState.blueTeamName}
+                </button>
+                <button
+                  onClick={() => setSelectedTeamForFormation("red")}
+                  className="w-full p-4 bg-red-600 hover:bg-red-700 rounded-lg text-white font-bold flex items-center justify-center gap-2"
+                >
+                  <Users className="w-5 h-5" />
+                  {gameState.redTeamName}
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-gray-300">
+                    Aplicando formação em:{" "}
+                    <span
+                      className={
+                        selectedTeamForFormation === "blue"
+                          ? "text-blue-400 font-bold"
+                          : "text-red-400 font-bold"
+                      }
+                    >
+                      {selectedTeamForFormation === "blue"
+                        ? gameState.blueTeamName
+                        : gameState.redTeamName}
+                    </span>
+                  </p>
+                  <button
+                    onClick={() => setSelectedTeamForFormation(null)}
+                    className="text-sm text-gray-400 hover:text-white"
+                  >
+                    Voltar
+                  </button>
+                </div>
+
+                {Object.keys(FORMATIONS).map((formation) => (
+                  <button
+                    key={formation}
+                    onClick={() =>
+                      applyFormation(
+                        formation as keyof typeof FORMATIONS,
+                        selectedTeamForFormation,
+                      )
+                    }
+                    className="w-full p-4 bg-gray-700 hover:bg-gray-600 rounded-lg text-white font-bold flex items-center justify-between group"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Grid3x3 className="w-5 h-5" />
+                      Formação {formation}
+                    </span>
+                    <Check className="w-5 h-5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Configuração */}
       {selectedPlayerButton && currentButton && (
         <div
           className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50"
