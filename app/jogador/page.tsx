@@ -167,11 +167,20 @@ export default function JogadorPage() {
       if (result && result.value) {
         const fullGame: GameState = JSON.parse(result.value);
 
+        console.log("🎮 Jogo carregado:", {
+          gameStarted: fullGame.gameStarted,
+          blueTeam: fullGame.blueTeam.length,
+          redTeam: fullGame.redTeam.length,
+        });
+
         // Verificar se a partida foi iniciada
-        if (!fullGame.gameStarted) {
+        if (fullGame.gameStarted !== true) {
+          console.log("⏸️ Partida ainda não iniciada");
           setGameState(null);
           return;
         }
+
+        console.log("✅ Partida iniciada! Filtrando jogadores visíveis...");
 
         const filteredGame = {
           ...fullGame,
@@ -181,12 +190,18 @@ export default function JogadorPage() {
           redTeam: fullGame.redTeam.filter((p) => p.visibleTo.includes(userId)),
         };
 
+        console.log("👁️ Jogadores visíveis:", {
+          blue: filteredGame.blueTeam.length,
+          red: filteredGame.redTeam.length,
+        });
+
         setGameState(filteredGame);
       } else {
+        console.log("❌ Nenhum jogo encontrado no storage");
         setGameState(null);
       }
     } catch (error) {
-      console.log("Nenhum jogo encontrado:", error);
+      console.log("❌ Erro ao carregar jogo:", error);
       setGameState(null);
     }
   };

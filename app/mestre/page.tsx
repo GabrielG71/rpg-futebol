@@ -190,9 +190,15 @@ export default function MestrePage() {
 
   const saveGame = async (state: typeof gameState) => {
     try {
+      console.log("💾 Salvando jogo:", {
+        gameStarted: state.gameStarted,
+        blueTeam: state.blueTeam.length,
+        redTeam: state.redTeam.length,
+      });
       await window.storage.set("current-game", JSON.stringify(state), true);
+      console.log("✅ Jogo salvo com sucesso!");
     } catch (error) {
-      console.error("Erro ao salvar jogo:", error);
+      console.error("❌ Erro ao salvar jogo:", error);
     }
   };
 
