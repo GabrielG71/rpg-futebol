@@ -1,6 +1,6 @@
 "use client";
 
-import { useUser, UserButton, useClerk } from "@clerk/nextjs";
+import { useUser, UserButton } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import {
@@ -14,6 +14,7 @@ import {
   EyeOff,
   X,
   Check,
+  Trash2,
 } from "lucide-react";
 
 interface Player {
@@ -29,11 +30,11 @@ interface RealPlayer {
   id: string;
   name: string;
   avatar: string;
+  isActive: boolean;
 }
 
 export default function MestrePage() {
   const { user, isLoaded } = useUser();
-  const { client } = useClerk();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [selectedPlayerButton, setSelectedPlayerButton] = useState<
@@ -55,48 +56,34 @@ export default function MestrePage() {
       return;
     }
 
-    // Carregar jogo salvo se existir
     const savedGame = localStorage.getItem("current-game");
     if (savedGame) {
       const parsed = JSON.parse(savedGame);
       setGameState(parsed);
     }
 
-    // Carregar jogadores conectados
     loadConnectedPlayers();
-
     setLoading(false);
   }, [user, isLoaded, router]);
 
   const loadConnectedPlayers = () => {
-    // Pegar lista de jogadores do localStorage (todos que escolheram "jogador")
     const players: RealPlayer[] = [];
 
-    // Procurar por todos os user-role salvos
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.startsWith("user-role:")) {
-        const role = localStorage.getItem(key);
-        if (role === "jogador") {
-          const userId = key.replace("user-role:", "");
+      if (key && key.startsWith("user-info:")) {
+        const userId = key.replace("user-info:", "");
+        const userInfo = localStorage.getItem(key);
+        const userRole = localStorage.getItem(`user-role:${userId}`);
 
-          // Tentar pegar informações do usuário
-          const userInfo = localStorage.getItem(`user-info:${userId}`);
-          if (userInfo) {
-            const info = JSON.parse(userInfo);
-            players.push({
-              id: userId,
-              name: info.name,
-              avatar: info.avatar || "👤",
-            });
-          } else {
-            // Se não tiver info salva, criar placeholder
-            players.push({
-              id: userId,
-              name: `Jogador ${players.length + 1}`,
-              avatar: "👤",
-            });
-          }
+        if (userInfo && userRole === "jogador") {
+          const info = JSON.parse(userInfo);
+          players.push({
+            id: userId,
+            name: info.name,
+            avatar: info.avatar || "👤",
+            isActive: info.isActive !== false,
+          });
         }
       }
     }
@@ -132,16 +119,14 @@ export default function MestrePage() {
 
   const [dragging, setDragging] = useState<string | null>(null);
 
-  // Salvar estado do jogo automaticamente
   useEffect(() => {
     if (!loading) {
       localStorage.setItem("current-game", JSON.stringify(gameState));
     }
   }, [gameState, loading]);
 
-  // Recarregar jogadores a cada 5 segundos
   useEffect(() => {
-    const interval = setInterval(loadConnectedPlayers, 5000);
+    const interval = setInterval(loadConnectedPlayers, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -239,6 +224,27 @@ export default function MestrePage() {
     }));
   };
 
+  const removePlayer = (playerId: string) => {
+    if (!confirm("Remover este jogador da partida?")) return;
+
+    // Remover atribuições deste jogador
+    setGameState((prev) => ({
+      ...prev,
+      blueTeam: prev.blueTeam.map((p) =>
+        p.assignedTo === playerId ? { ...p, assignedTo: undefined } : p,
+      ),
+      redTeam: prev.redTeam.map((p) =>
+        p.assignedTo === playerId ? { ...p, assignedTo: undefined } : p,
+      ),
+    }));
+
+    // Remover dados do jogador
+    localStorage.removeItem(`user-info:${playerId}`);
+    localStorage.removeItem(`user-role:${playerId}`);
+
+    loadConnectedPlayers();
+  };
+
   const saveTime = () => {
     setGameState((prev) => ({ ...prev, displayTime: tempTime }));
     setEditingTime(false);
@@ -246,6 +252,7 @@ export default function MestrePage() {
   };
 
   const getPlayerById = (id?: string) => realPlayers.find((p) => p.id === id);
+  const activeRealPlayers = realPlayers.filter((p) => p.isActive);
 
   if (loading) {
     return (
@@ -450,24 +457,30 @@ export default function MestrePage() {
         </div>
 
         {/* Banco de Jogadores */}
-        {realPlayers.length > 0 ? (
+        {activeRealPlayers.length > 0 ? (
           <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
             <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-              <Users className="w-5 h-5" /> Jogadores Conectados (
-              {realPlayers.length})
+              <Users className="w-5 h-5" /> Jogadores Ativos (
+              {activeRealPlayers.length})
             </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {realPlayers.map((player) => (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {activeRealPlayers.map((player) => (
                 <div
                   key={player.id}
-                  className="bg-gray-700 rounded-lg p-3 text-center hover:bg-gray-600 transition-colors"
+                  className="bg-gray-700 rounded-lg p-3 relative group"
                 >
-                  <div className="text-4xl mb-2">{player.avatar}</div>
-                  <div className="text-white text-sm font-semibold truncate">
-                    {player.name}
-                  </div>
-                  <div className="text-gray-400 text-xs truncate">
-                    {player.id.slice(0, 8)}...
+                  <button
+                    onClick={() => removePlayer(player.id)}
+                    className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <Trash2 className="w-3 h-3 text-white" />
+                  </button>
+                  <div className="text-center">
+                    <div className="text-4xl mb-2">{player.avatar}</div>
+                    <div className="text-white text-sm font-semibold truncate">
+                      {player.name}
+                    </div>
+                    <div className="text-green-400 text-xs mt-1">● Ativo</div>
                   </div>
                 </div>
               ))}
@@ -477,9 +490,9 @@ export default function MestrePage() {
           <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
             <div className="text-center text-gray-400">
               <Users className="w-12 h-12 mx-auto mb-2 opacity-50" />
-              <p>Nenhum jogador conectado ainda</p>
+              <p>Nenhum jogador ativo na partida</p>
               <p className="text-sm mt-1">
-                Os jogadores aparecerão aqui quando fizerem login
+                Jogadores aparecerão aqui quando clicarem em "Entrar na Partida"
               </p>
             </div>
           </div>
@@ -496,16 +509,13 @@ export default function MestrePage() {
             onMouseLeave={handleMouseUp}
           >
             <div className="absolute inset-0">
-              {/* Linhas do campo */}
               <div className="absolute inset-0 border-4 border-white opacity-50"></div>
               <div className="absolute left-1/2 top-0 bottom-0 w-1 bg-white opacity-50"></div>
               <div className="absolute left-1/2 top-1/2 w-20 h-20 border-4 border-white rounded-full opacity-50 -translate-x-1/2 -translate-y-1/2"></div>
 
-              {/* Gols */}
               <div className="absolute left-0 top-1/2 w-2 h-24 bg-white opacity-70 -translate-y-1/2"></div>
               <div className="absolute right-0 top-1/2 w-2 h-24 bg-white opacity-70 -translate-y-1/2"></div>
 
-              {/* Jogadores Time Azul */}
               {gameState.blueTeam.map((player) => {
                 const assignedPlayer = getPlayerById(player.assignedTo);
                 return (
@@ -539,7 +549,6 @@ export default function MestrePage() {
                 );
               })}
 
-              {/* Jogadores Time Vermelho */}
               {gameState.redTeam.map((player) => {
                 const assignedPlayer = getPlayerById(player.assignedTo);
                 return (
@@ -573,7 +582,6 @@ export default function MestrePage() {
                 );
               })}
 
-              {/* Bola */}
               <div
                 onMouseDown={() => handleMouseDown("ball")}
                 style={{
@@ -589,13 +597,13 @@ export default function MestrePage() {
             </div>
           </div>
           <p className="text-gray-400 text-sm mt-4">
-            💡 Arraste jogadores e bola | Clique duplo em um jogador para
-            atribuir/configurar | Número verde = quantos jogadores podem ver
+            💡 Arraste jogadores e bola | Clique duplo para configurar | Verde =
+            visível para N jogadores
           </p>
         </div>
       </div>
 
-      {/* Modal de Atribuição/Visibilidade */}
+      {/* Modal */}
       {selectedPlayerButton && currentButton && (
         <div
           className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50"
@@ -607,7 +615,7 @@ export default function MestrePage() {
           >
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-white font-bold text-lg">
-                Configurar Jogador #{currentButton.number}
+                Configurar Posição #{currentButton.number}
               </h3>
               <button
                 onClick={() => setSelectedPlayerButton(null)}
@@ -617,11 +625,8 @@ export default function MestrePage() {
               </button>
             </div>
 
-            {/* Atribuir jogador */}
             <div className="mb-6">
-              <h4 className="text-white font-semibold mb-3">
-                Atribuir a um jogador:
-              </h4>
+              <h4 className="text-white font-semibold mb-3">Atribuir a:</h4>
               <div className="space-y-2">
                 <button
                   onClick={() =>
@@ -633,17 +638,20 @@ export default function MestrePage() {
                       : "bg-gray-700 hover:bg-gray-600"
                   }`}
                 >
-                  <div className="text-2xl">❌</div>
-                  <div className="text-white text-left">
+                  <div className="text-2xl">🤖</div>
+                  <div className="text-white text-left flex-1">
                     <div className="font-semibold">
-                      Nenhum (Número {currentButton.number})
+                      NPC (Número {currentButton.number})
+                    </div>
+                    <div className="text-xs text-gray-300">
+                      Personagem não-jogável
                     </div>
                   </div>
                   {!currentButton.assignedTo && (
-                    <Check className="w-5 h-5 text-white ml-auto" />
+                    <Check className="w-5 h-5 text-white" />
                   )}
                 </button>
-                {realPlayers.map((player) => (
+                {activeRealPlayers.map((player) => (
                   <button
                     key={player.id}
                     onClick={() =>
@@ -658,9 +666,6 @@ export default function MestrePage() {
                     <div className="text-2xl">{player.avatar}</div>
                     <div className="text-white text-left flex-1">
                       <div className="font-semibold">{player.name}</div>
-                      <div className="text-xs text-gray-400">
-                        {player.id.slice(0, 12)}...
-                      </div>
                     </div>
                     {currentButton.assignedTo === player.id && (
                       <Check className="w-5 h-5 text-white" />
@@ -670,7 +675,6 @@ export default function MestrePage() {
               </div>
             </div>
 
-            {/* Controle de visibilidade */}
             <div>
               <h4 className="text-white font-semibold mb-3">Visível para:</h4>
               {realPlayers.length === 0 ? (
@@ -702,7 +706,7 @@ export default function MestrePage() {
                         <div className="text-white text-left flex-1">
                           <div className="font-semibold">{player.name}</div>
                           <div className="text-xs text-gray-300">
-                            {player.id.slice(0, 12)}...
+                            {player.isActive ? "● Ativo" : "○ Espectador"}
                           </div>
                         </div>
                         {isVisible ? (
