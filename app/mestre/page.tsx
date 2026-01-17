@@ -20,17 +20,6 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 
-declare global {
-  interface Window {
-    storage: {
-      get: (key: string, persistent: boolean) => Promise<any>;
-      set: (key: string, value: string, persistent: boolean) => Promise<void>;
-      list: (prefix: string, persistent: boolean) => Promise<any>;
-      delete: (key: string, persistent: boolean) => Promise<void>;
-    };
-  }
-}
-
 interface Player {
   id: string;
   x: number;
@@ -141,7 +130,6 @@ export default function MestrePage() {
         number: i + 1,
         visibleTo: [] as string[],
         customImage: undefined,
-        assignedTo: undefined,
       })),
     redTeam: Array(11)
       .fill(null)
@@ -152,7 +140,6 @@ export default function MestrePage() {
         number: i + 1,
         visibleTo: [] as string[],
         customImage: undefined,
-        assignedTo: undefined,
       })),
     ball: { x: 50, y: 50 },
     displayTime: "00:00",
@@ -184,6 +171,10 @@ export default function MestrePage() {
       const result = await window.storage.get("current-game", true);
       if (result && result.value) {
         const parsed = JSON.parse(result.value);
+        // Garantir que gameStarted existe
+        if (parsed.gameStarted === undefined) {
+          parsed.gameStarted = false;
+        }
         setGameState(parsed);
       }
     } catch (error) {
@@ -318,7 +309,6 @@ export default function MestrePage() {
           number: i + 1,
           visibleTo: [] as string[],
           customImage: undefined,
-          assignedTo: undefined,
         })),
       redTeam: Array(11)
         .fill(null)
@@ -329,7 +319,6 @@ export default function MestrePage() {
           number: i + 1,
           visibleTo: [] as string[],
           customImage: undefined,
-          assignedTo: undefined,
         })),
       ball: { x: 50, y: 50 },
       displayTime: "00:00",
@@ -499,8 +488,11 @@ export default function MestrePage() {
               <h2 className="text-3xl font-bold text-white mb-4">
                 Partida não iniciada
               </h2>
-              <p className="text-gray-400 mb-6">
+              <p className="text-gray-400 mb-2">
                 Clique no botão abaixo para iniciar a partida. Os jogadores poderão ver o campo e você poderá gerenciar tudo.
+              </p>
+              <p className="text-xs text-gray-500 mb-6">
+                Status: gameStarted = {String(gameState.gameStarted)}
               </p>
               
               <div className="bg-gray-700 rounded-lg p-4 mb-6">
@@ -524,13 +516,9 @@ export default function MestrePage() {
 
               <button
                 onClick={startGame}
-                className="w-full bg-green-600 hover:bg-green-700 text-white px-8 py-4 rounded-lg font-bold text-xl flex items-center justify-center gap-3 transition-all transform hover:scale-105"
+                className="w-full bg-green-600 hover:bg-green-700 text-white px-8 py-4 rounded-lg font-bold text-xl flex items-center justify-center gap-3 transition-all transform hover:scale-105 shadow-lg"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Iniciar Partida
+                ▶️ Iniciar Partida
               </button>
 
               <p className="text-gray-500 text-sm mt-4">
@@ -539,6 +527,26 @@ export default function MestrePage() {
             </div>
           </div>
         ) : (
+          <div className="mb-4">
+            <div className="bg-green-900 border border-green-600 rounded-lg p-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"/>
+                <span className="text-green-200 font-semibold">🎮 Partida em Andamento</span>
+              </div>
+              <button
+                onClick={endGame}
+                className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded text-sm flex items-center gap-2"
+              >
+                <X className="w-4 h-4" />
+                Finalizar
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Só mostra os controles se a partida estiver iniciada */}
+        {gameState.gameStarted && (
+          <>
         {/* Controles */}
         <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -690,18 +698,11 @@ export default function MestrePage() {
                 Atualizar Jogadores
               </button>
               <button
-                onClick={endGame}
-                className="w-full bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded flex items-center justify-center gap-2 mb-2"
-              >
-                <X className="w-4 h-4" />
-                Finalizar Partida
-              </button>
-              <button
                 onClick={resetGame}
                 className="w-full bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded flex items-center justify-center gap-2 mb-2"
               >
                 <RotateCcw className="w-4 h-4" />
-                Resetar Jogo
+                Resetar Tudo
               </button>
               <div className="text-green-400 text-sm text-center mt-2">
                 ✓ Salvando automaticamente
