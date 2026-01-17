@@ -20,6 +20,17 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 
+declare global {
+  interface Window {
+    storage: {
+      get: (key: string, persistent: boolean) => Promise<any>;
+      set: (key: string, value: string, persistent: boolean) => Promise<void>;
+      list: (prefix: string, persistent: boolean) => Promise<any>;
+      delete: (key: string, persistent: boolean) => Promise<void>;
+    };
+  }
+}
+
 interface Player {
   id: string;
   x: number;
@@ -109,20 +120,14 @@ export default function MestrePage() {
   const { user, isLoaded } = useUser();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [selectedPlayerButton, setSelectedPlayerButton] = useState<
-    string | null
-  >(null);
+  const [selectedPlayerButton, setSelectedPlayerButton] = useState<string | null>(null);
   const [editingTeamNames, setEditingTeamNames] = useState(false);
   const [editingTime, setEditingTime] = useState(false);
   const [tempTime, setTempTime] = useState("");
   const [realPlayers, setRealPlayers] = useState<RealPlayer[]>([]);
   const [showFormations, setShowFormations] = useState(false);
-  const [selectedTeamForFormation, setSelectedTeamForFormation] = useState<
-    "blue" | "red" | null
-  >(null);
-  const [uploadingImageFor, setUploadingImageFor] = useState<string | null>(
-    null,
-  );
+  const [selectedTeamForFormation, setSelectedTeamForFormation] = useState<"blue" | "red" | null>(null);
+  const [uploadingImageFor, setUploadingImageFor] = useState<string | null>(null);
 
   const [gameState, setGameState] = useState({
     blueTeamName: "Time Azul",
@@ -136,6 +141,7 @@ export default function MestrePage() {
         number: i + 1,
         visibleTo: [] as string[],
         customImage: undefined,
+        assignedTo: undefined,
       })),
     redTeam: Array(11)
       .fill(null)
@@ -146,11 +152,13 @@ export default function MestrePage() {
         number: i + 1,
         visibleTo: [] as string[],
         customImage: undefined,
+        assignedTo: undefined,
       })),
     ball: { x: 50, y: 50 },
     displayTime: "00:00",
     score: { blue: 0, red: 0 },
     fieldImage: undefined as string | undefined,
+    gameStarted: false,
   });
 
   const [dragging, setDragging] = useState<string | null>(null);
@@ -202,7 +210,7 @@ export default function MestrePage() {
       const result = await window.storage.list("user-info:", true);
       if (result && result.keys) {
         const players: RealPlayer[] = [];
-
+        
         for (const key of result.keys) {
           try {
             const userInfo = await window.storage.get(key, true);
@@ -225,7 +233,7 @@ export default function MestrePage() {
             console.log("Erro ao carregar info do jogador:", error);
           }
         }
-
+        
         setRealPlayers(players);
       }
     } catch (error) {
@@ -239,9 +247,7 @@ export default function MestrePage() {
   }, []);
 
   const goToMenu = () => {
-    if (
-      confirm("Voltar ao menu? Você precisará escolher sua função novamente.")
-    ) {
+    if (confirm("Voltar ao menu? Você precisará escolher sua função novamente.")) {
       if (user) {
         localStorage.removeItem(`user-role:${user.id}`);
       }
@@ -249,10 +255,7 @@ export default function MestrePage() {
     }
   };
 
-  const applyFormation = (
-    formationName: keyof typeof FORMATIONS,
-    team: "blue" | "red",
-  ) => {
+  const applyFormation = (formationName: keyof typeof FORMATIONS, team: "blue" | "red") => {
     const formation = FORMATIONS[formationName];
     const teamKey = team === "blue" ? "blueTeam" : "redTeam";
 
@@ -291,7 +294,7 @@ export default function MestrePage() {
     setGameState((prev) => ({
       ...prev,
       [teamKey]: prev[teamKey].map((player) =>
-        player.id === dragging ? { ...player, x, y } : player,
+        player.id === dragging ? { ...player, x, y } : player
       ),
     }));
   };
@@ -315,6 +318,7 @@ export default function MestrePage() {
           number: i + 1,
           visibleTo: [] as string[],
           customImage: undefined,
+          assignedTo: undefined,
         })),
       redTeam: Array(11)
         .fill(null)
@@ -325,14 +329,25 @@ export default function MestrePage() {
           number: i + 1,
           visibleTo: [] as string[],
           customImage: undefined,
+          assignedTo: undefined,
         })),
       ball: { x: 50, y: 50 },
       displayTime: "00:00",
       score: { blue: 0, red: 0 },
       fieldImage: undefined,
+      gameStarted: false,
     };
 
     setGameState(newState);
+  };
+
+  const startGame = () => {
+    setGameState((prev) => ({ ...prev, gameStarted: true }));
+  };
+
+  const endGame = () => {
+    if (!confirm("Finalizar a partida? Os jogadores não verão mais o jogo.")) return;
+    setGameState((prev) => ({ ...prev, gameStarted: false }));
   };
 
   const assignPlayerToButton = (buttonId: string, playerId: string | null) => {
@@ -342,9 +357,7 @@ export default function MestrePage() {
     setGameState((prev) => ({
       ...prev,
       [teamKey]: prev[teamKey].map((player) =>
-        player.id === buttonId
-          ? { ...player, assignedTo: playerId || undefined }
-          : player,
+        player.id === buttonId ? { ...player, assignedTo: playerId || undefined } : player
       ),
     }));
     setSelectedPlayerButton(null);
@@ -374,10 +387,10 @@ export default function MestrePage() {
     setGameState((prev) => ({
       ...prev,
       blueTeam: prev.blueTeam.map((p) =>
-        p.assignedTo === playerId ? { ...p, assignedTo: undefined } : p,
+        p.assignedTo === playerId ? { ...p, assignedTo: undefined } : p
       ),
       redTeam: prev.redTeam.map((p) =>
-        p.assignedTo === playerId ? { ...p, assignedTo: undefined } : p,
+        p.assignedTo === playerId ? { ...p, assignedTo: undefined } : p
       ),
     }));
 
@@ -402,37 +415,35 @@ export default function MestrePage() {
     const reader = new FileReader();
     reader.onload = (e) => {
       const base64 = e.target?.result as string;
-
+      
       if (playerId === "field") {
         setGameState((prev) => ({ ...prev, fieldImage: base64 }));
       } else {
         const [team] = playerId.split("-");
         const teamKey = team === "blue" ? "blueTeam" : "redTeam";
-
+        
         setGameState((prev) => ({
           ...prev,
           [teamKey]: prev[teamKey].map((player) =>
-            player.id === playerId
-              ? { ...player, customImage: base64 }
-              : player,
+            player.id === playerId ? { ...player, customImage: base64 } : player
           ),
         }));
       }
-
+      
       setUploadingImageFor(null);
     };
-
+    
     reader.readAsDataURL(file);
   };
 
   const resetPlayerImage = (playerId: string) => {
     const [team] = playerId.split("-");
     const teamKey = team === "blue" ? "blueTeam" : "redTeam";
-
+    
     setGameState((prev) => ({
       ...prev,
       [teamKey]: prev[teamKey].map((player) =>
-        player.id === playerId ? { ...player, customImage: undefined } : player,
+        player.id === playerId ? { ...player, customImage: undefined } : player
       ),
     }));
   };
@@ -453,9 +464,7 @@ export default function MestrePage() {
   }
 
   const currentButton = selectedPlayerButton
-    ? [...gameState.blueTeam, ...gameState.redTeam].find(
-        (p) => p.id === selectedPlayerButton,
-      )
+    ? [...gameState.blueTeam, ...gameState.redTeam].find((p) => p.id === selectedPlayerButton)
     : null;
 
   return (
@@ -466,12 +475,8 @@ export default function MestrePage() {
           <div className="flex items-center gap-4">
             <div className="text-3xl md:text-4xl">⚽</div>
             <div>
-              <h1 className="text-2xl md:text-3xl font-bold text-white">
-                Painel do Mestre
-              </h1>
-              <p className="text-gray-400 text-sm md:text-base">
-                Controle total da partida
-              </p>
+              <h1 className="text-2xl md:text-3xl font-bold text-white">Painel do Mestre</h1>
+              <p className="text-gray-400 text-sm md:text-base">Controle total da partida</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -486,6 +491,55 @@ export default function MestrePage() {
           </div>
         </div>
 
+        {/* Tela de Iniciar Partida */}
+        {!gameState.gameStarted ? (
+          <div className="flex flex-col items-center justify-center min-h-[60vh]">
+            <div className="bg-gray-800 rounded-lg p-8 md:p-12 max-w-2xl w-full text-center">
+              <div className="text-6xl mb-6">⚽</div>
+              <h2 className="text-3xl font-bold text-white mb-4">
+                Partida não iniciada
+              </h2>
+              <p className="text-gray-400 mb-6">
+                Clique no botão abaixo para iniciar a partida. Os jogadores poderão ver o campo e você poderá gerenciar tudo.
+              </p>
+              
+              <div className="bg-gray-700 rounded-lg p-4 mb-6">
+                <h3 className="text-white font-bold mb-3 flex items-center justify-center gap-2">
+                  <Users className="w-5 h-5" />
+                  Jogadores Conectados ({activeRealPlayers.length})
+                </h3>
+                {activeRealPlayers.length > 0 ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-40 overflow-y-auto">
+                    {activeRealPlayers.map((player) => (
+                      <div key={player.id} className="bg-gray-600 rounded p-2 text-center">
+                        <div className="text-2xl mb-1">{player.avatar}</div>
+                        <div className="text-white text-xs truncate">{player.name}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-gray-400 text-sm">Nenhum jogador conectado ainda</p>
+                )}
+              </div>
+
+              <button
+                onClick={startGame}
+                className="w-full bg-green-600 hover:bg-green-700 text-white px-8 py-4 rounded-lg font-bold text-xl flex items-center justify-center gap-3 transition-all transform hover:scale-105"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Iniciar Partida
+              </button>
+
+              <p className="text-gray-500 text-sm mt-4">
+                Você poderá configurar tudo depois de iniciar
+              </p>
+            </div>
+          </div>
+        ) : (
+          <>
         {/* Controles */}
         <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -501,10 +555,7 @@ export default function MestrePage() {
                       type="text"
                       value={gameState.blueTeamName}
                       onChange={(e) =>
-                        setGameState((prev) => ({
-                          ...prev,
-                          blueTeamName: e.target.value,
-                        }))
+                        setGameState((prev) => ({ ...prev, blueTeamName: e.target.value }))
                       }
                       className="w-full bg-gray-600 text-blue-400 font-bold text-center rounded p-2"
                       placeholder="Nome do time azul"
@@ -513,10 +564,7 @@ export default function MestrePage() {
                       type="text"
                       value={gameState.redTeamName}
                       onChange={(e) =>
-                        setGameState((prev) => ({
-                          ...prev,
-                          redTeamName: e.target.value,
-                        }))
+                        setGameState((prev) => ({ ...prev, redTeamName: e.target.value }))
                       }
                       className="w-full bg-gray-600 text-red-400 font-bold text-center rounded p-2"
                       placeholder="Nome do time vermelho"
@@ -548,10 +596,7 @@ export default function MestrePage() {
                       onChange={(e) =>
                         setGameState((prev) => ({
                           ...prev,
-                          score: {
-                            ...prev.score,
-                            blue: parseInt(e.target.value) || 0,
-                          },
+                          score: { ...prev.score, blue: parseInt(e.target.value) || 0 },
                         }))
                       }
                       className="w-16 bg-gray-600 text-white text-2xl font-bold text-center rounded p-2"
@@ -568,10 +613,7 @@ export default function MestrePage() {
                       onChange={(e) =>
                         setGameState((prev) => ({
                           ...prev,
-                          score: {
-                            ...prev.score,
-                            red: parseInt(e.target.value) || 0,
-                          },
+                          score: { ...prev.score, red: parseInt(e.target.value) || 0 },
                         }))
                       }
                       className="w-16 bg-gray-600 text-white text-2xl font-bold text-center rounded p-2"
@@ -649,6 +691,13 @@ export default function MestrePage() {
                 Atualizar Jogadores
               </button>
               <button
+                onClick={endGame}
+                className="w-full bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded flex items-center justify-center gap-2 mb-2"
+              >
+                <X className="w-4 h-4" />
+                Finalizar Partida
+              </button>
+              <button
                 onClick={resetGame}
                 className="w-full bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded flex items-center justify-center gap-2 mb-2"
               >
@@ -666,15 +715,11 @@ export default function MestrePage() {
         {activeRealPlayers.length > 0 ? (
           <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
             <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-              <Users className="w-5 h-5" /> Jogadores Ativos (
-              {activeRealPlayers.length})
+              <Users className="w-5 h-5" /> Jogadores Ativos ({activeRealPlayers.length})
             </h3>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {activeRealPlayers.map((player) => (
-                <div
-                  key={player.id}
-                  className="bg-gray-700 rounded-lg p-3 relative group"
-                >
+                <div key={player.id} className="bg-gray-700 rounded-lg p-3 relative group">
                   <button
                     onClick={() => removePlayer(player.id)}
                     className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10"
@@ -683,9 +728,7 @@ export default function MestrePage() {
                   </button>
                   <div className="text-center">
                     <div className="text-4xl mb-2">{player.avatar}</div>
-                    <div className="text-white text-sm font-semibold truncate">
-                      {player.name}
-                    </div>
+                    <div className="text-white text-sm font-semibold truncate">{player.name}</div>
                     <div className="text-green-400 text-xs mt-1">● Ativo</div>
                   </div>
                 </div>
@@ -737,9 +780,7 @@ export default function MestrePage() {
             className="relative w-full rounded-lg overflow-hidden cursor-move"
             style={{
               paddingBottom: "66.67%",
-              backgroundImage: gameState.fieldImage
-                ? `url(${gameState.fieldImage})`
-                : "none",
+              backgroundImage: gameState.fieldImage ? `url(${gameState.fieldImage})` : "none",
               backgroundSize: "cover",
               backgroundPosition: "center",
               backgroundColor: gameState.fieldImage ? "transparent" : "#15803d",
@@ -774,11 +815,7 @@ export default function MestrePage() {
                     className="absolute w-10 h-10 bg-blue-500 border-2 border-white rounded-full flex flex-col items-center justify-center text-white font-bold text-xs cursor-grab active:cursor-grabbing transform -translate-x-1/2 -translate-y-1/2 hover:scale-110 transition-transform shadow-lg group overflow-hidden"
                   >
                     {player.customImage ? (
-                      <img
-                        src={player.customImage}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
+                      <img src={player.customImage} alt="" className="w-full h-full object-cover" />
                     ) : assignedPlayer ? (
                       <div className="text-lg">{assignedPlayer.avatar}</div>
                     ) : (
@@ -813,11 +850,7 @@ export default function MestrePage() {
                     className="absolute w-10 h-10 bg-red-500 border-2 border-white rounded-full flex flex-col items-center justify-center text-white font-bold text-xs cursor-grab active:cursor-grabbing transform -translate-x-1/2 -translate-y-1/2 hover:scale-110 transition-transform shadow-lg group overflow-hidden"
                   >
                     {player.customImage ? (
-                      <img
-                        src={player.customImage}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
+                      <img src={player.customImage} alt="" className="w-full h-full object-cover" />
                     ) : assignedPlayer ? (
                       <div className="text-lg">{assignedPlayer.avatar}</div>
                     ) : (
@@ -839,25 +872,19 @@ export default function MestrePage() {
 
               <div
                 onMouseDown={() => handleMouseDown("ball")}
-                style={{
-                  left: `${gameState.ball.x}%`,
-                  top: `${gameState.ball.y}%`,
-                }}
+                style={{ left: `${gameState.ball.x}%`, top: `${gameState.ball.y}%` }}
                 className="absolute w-6 h-6 bg-white rounded-full cursor-grab active:cursor-grabbing transform -translate-x-1/2 -translate-y-1/2 hover:scale-125 transition-transform shadow-xl border-2 border-gray-800"
               >
-                <div className="absolute inset-0 flex items-center justify-center text-xs">
-                  ⚽
-                </div>
+                <div className="absolute inset-0 flex items-center justify-center text-xs">⚽</div>
               </div>
             </div>
           </div>
           <p className="text-gray-400 text-sm mt-4">
-            💡 Arraste jogadores e bola | Clique duplo para configurar | Verde =
-            visível para N jogadores
+            💡 Arraste jogadores e bola | Clique duplo para configurar | Verde = visível para N jogadores
           </p>
         </div>
       </div>
-
+      </>
       {/* Modal de Formações */}
       {showFormations && (
         <div
@@ -889,9 +916,7 @@ export default function MestrePage() {
 
             {!selectedTeamForFormation ? (
               <div className="space-y-3">
-                <p className="text-gray-300 mb-4">
-                  Escolha um time para aplicar a formação:
-                </p>
+                <p className="text-gray-300 mb-4">Escolha um time para aplicar a formação:</p>
                 <button
                   onClick={() => setSelectedTeamForFormation("blue")}
                   className="w-full p-4 bg-blue-600 hover:bg-blue-700 rounded-lg text-white font-bold flex items-center justify-center gap-2"
@@ -936,10 +961,7 @@ export default function MestrePage() {
                   <button
                     key={formation}
                     onClick={() =>
-                      applyFormation(
-                        formation as keyof typeof FORMATIONS,
-                        selectedTeamForFormation,
-                      )
+                      applyFormation(formation as keyof typeof FORMATIONS, selectedTeamForFormation)
                     }
                     className="w-full p-4 bg-gray-700 hover:bg-gray-600 rounded-lg text-white font-bold flex items-center justify-between group"
                   >
@@ -970,10 +992,7 @@ export default function MestrePage() {
               <h3 className="text-white font-bold text-lg">
                 Configurar Posição #{currentButton.number}
               </h3>
-              <button
-                onClick={() => setSelectedPlayerButton(null)}
-                className="text-gray-400 hover:text-white"
-              >
+              <button onClick={() => setSelectedPlayerButton(null)} className="text-gray-400 hover:text-white">
                 <X className="w-6 h-6" />
               </button>
             </div>
@@ -1010,11 +1029,7 @@ export default function MestrePage() {
               </div>
               {currentButton.customImage && (
                 <div className="mt-3 flex justify-center">
-                  <img
-                    src={currentButton.customImage}
-                    alt="Preview"
-                    className="w-20 h-20 rounded-full object-cover border-2 border-white"
-                  />
+                  <img src={currentButton.customImage} alt="Preview" className="w-20 h-20 rounded-full object-cover border-2 border-white" />
                 </div>
               )}
             </div>
@@ -1023,34 +1038,22 @@ export default function MestrePage() {
               <h4 className="text-white font-semibold mb-3">Atribuir a:</h4>
               <div className="space-y-2">
                 <button
-                  onClick={() =>
-                    assignPlayerToButton(selectedPlayerButton, null)
-                  }
+                  onClick={() => assignPlayerToButton(selectedPlayerButton, null)}
                   className={`w-full p-3 rounded flex items-center gap-3 transition-colors ${
-                    !currentButton.assignedTo
-                      ? "bg-green-600"
-                      : "bg-gray-700 hover:bg-gray-600"
+                    !currentButton.assignedTo ? "bg-green-600" : "bg-gray-700 hover:bg-gray-600"
                   }`}
                 >
                   <div className="text-2xl">🤖</div>
                   <div className="text-white text-left flex-1">
-                    <div className="font-semibold">
-                      NPC (Número {currentButton.number})
-                    </div>
-                    <div className="text-xs text-gray-300">
-                      Personagem não-jogável
-                    </div>
+                    <div className="font-semibold">NPC (Número {currentButton.number})</div>
+                    <div className="text-xs text-gray-300">Personagem não-jogável</div>
                   </div>
-                  {!currentButton.assignedTo && (
-                    <Check className="w-5 h-5 text-white" />
-                  )}
+                  {!currentButton.assignedTo && <Check className="w-5 h-5 text-white" />}
                 </button>
                 {activeRealPlayers.map((player) => (
                   <button
                     key={player.id}
-                    onClick={() =>
-                      assignPlayerToButton(selectedPlayerButton, player.id)
-                    }
+                    onClick={() => assignPlayerToButton(selectedPlayerButton, player.id)}
                     className={`w-full p-3 rounded flex items-center gap-3 transition-colors ${
                       currentButton.assignedTo === player.id
                         ? "bg-green-600"
@@ -1061,9 +1064,7 @@ export default function MestrePage() {
                     <div className="text-white text-left flex-1">
                       <div className="font-semibold">{player.name}</div>
                     </div>
-                    {currentButton.assignedTo === player.id && (
-                      <Check className="w-5 h-5 text-white" />
-                    )}
+                    {currentButton.assignedTo === player.id && <Check className="w-5 h-5 text-white" />}
                   </button>
                 ))}
               </div>
@@ -1072,28 +1073,17 @@ export default function MestrePage() {
             <div>
               <h4 className="text-white font-semibold mb-3">Visível para:</h4>
               {realPlayers.length === 0 ? (
-                <div className="text-gray-400 text-sm text-center py-4">
-                  Nenhum jogador conectado
-                </div>
+                <div className="text-gray-400 text-sm text-center py-4">Nenhum jogador conectado</div>
               ) : (
                 <div className="space-y-2">
                   {realPlayers.map((player) => {
-                    const isVisible = currentButton.visibleTo.includes(
-                      player.id,
-                    );
+                    const isVisible = currentButton.visibleTo.includes(player.id);
                     return (
                       <button
                         key={player.id}
-                        onClick={() =>
-                          togglePlayerVisibility(
-                            selectedPlayerButton,
-                            player.id,
-                          )
-                        }
+                        onClick={() => togglePlayerVisibility(selectedPlayerButton, player.id)}
                         className={`w-full p-3 rounded flex items-center gap-3 transition-colors ${
-                          isVisible
-                            ? "bg-green-600 hover:bg-green-700"
-                            : "bg-gray-700 hover:bg-gray-600"
+                          isVisible ? "bg-green-600 hover:bg-green-700" : "bg-gray-700 hover:bg-gray-600"
                         }`}
                       >
                         <div className="text-2xl">{player.avatar}</div>

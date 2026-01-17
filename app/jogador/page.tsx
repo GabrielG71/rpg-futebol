@@ -21,6 +21,7 @@ interface GameState {
   displayTime: string;
   score: { blue: number; red: number };
   fieldImage?: string;
+  gameStarted?: boolean;
 }
 
 interface RealPlayer {
@@ -165,6 +166,12 @@ export default function JogadorPage() {
       const result = await window.storage.get("current-game", true);
       if (result && result.value) {
         const fullGame: GameState = JSON.parse(result.value);
+
+        // Verificar se a partida foi iniciada
+        if (!fullGame.gameStarted) {
+          setGameState(null);
+          return;
+        }
 
         const filteredGame = {
           ...fullGame,
