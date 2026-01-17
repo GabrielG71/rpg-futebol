@@ -3,7 +3,7 @@
 import { useUser, UserButton } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { Users, Clock, Eye } from "lucide-react";
+import { Users, Clock, Eye, RefreshCw } from "lucide-react";
 
 interface Player {
   id: string;
@@ -24,12 +24,18 @@ interface GameState {
   score: { blue: number; red: number };
 }
 
+interface RealPlayer {
+  id: string;
+  name: string;
+  avatar: string;
+}
+
 export default function JogadorPage() {
   const { user, isLoaded } = useUser();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [gameState, setGameState] = useState<GameState | null>(null);
-  const [myPlayerId, setMyPlayerId] = useState<string>("p1"); // Simulação - depois vem do backend
+  const [realPlayers, setRealPlayers] = useState<RealPlayer[]>([]);
 
   useEffect(() => {
     if (!isLoaded || !user) return;
@@ -42,11 +48,47 @@ export default function JogadorPage() {
       return;
     }
 
+    // Salvar informações do usuário para o mestre ver
+    const userInfo = {
+      name: user.firstName || user.username || "Jogador",
+      avatar: user.imageUrl ? "🎮" : "👤",
+    };
+    localStorage.setItem(`user-info:${user.id}`, JSON.stringify(userInfo));
+
     setLoading(false);
   }, [user, isLoaded, router]);
 
+  // Carregar lista de jogadores
+  useEffect(() => {
+    const loadPlayers = () => {
+      const players: RealPlayer[] = [];
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith("user-info:")) {
+          const userId = key.replace("user-info:", "");
+          const userInfo = localStorage.getItem(key);
+          if (userInfo) {
+            const info = JSON.parse(userInfo);
+            players.push({
+              id: userId,
+              name: info.name,
+              avatar: info.avatar || "👤",
+            });
+          }
+        }
+      }
+
+      setRealPlayers(players);
+    };
+
+    loadPlayers();
+  }, []);
+
   // Carregar estado do jogo a cada 1 segundo
   useEffect(() => {
+    if (!user) return;
+
     const loadGame = () => {
       const gameData = localStorage.getItem("current-game");
       if (gameData) {
@@ -56,10 +98,10 @@ export default function JogadorPage() {
         const filteredGame = {
           ...fullGame,
           blueTeam: fullGame.blueTeam.filter((p) =>
-            p.visibleTo.includes(myPlayerId),
+            p.visibleTo.includes(user.id),
           ),
           redTeam: fullGame.redTeam.filter((p) =>
-            p.visibleTo.includes(myPlayerId),
+            p.visibleTo.includes(user.id),
           ),
         };
 
@@ -71,7 +113,9 @@ export default function JogadorPage() {
     const interval = setInterval(loadGame, 1000);
 
     return () => clearInterval(interval);
-  }, [myPlayerId]);
+  }, [user]);
+
+  const getPlayerById = (id?: string) => realPlayers.find((p) => p.id === id);
 
   if (loading) {
     return (
@@ -89,23 +133,20 @@ export default function JogadorPage() {
           <div className="text-white text-2xl mb-2">
             Aguardando o mestre iniciar a partida...
           </div>
-          <div className="text-gray-400 text-sm">
+          <div className="text-gray-400 text-sm mb-4">
             O jogo aparecerá aqui assim que o mestre configurar tudo
+          </div>
+          <div className="inline-flex items-center gap-2 bg-gray-800 px-4 py-2 rounded-lg">
+            <RefreshCw className="w-4 h-4 text-green-400 animate-spin" />
+            <span className="text-green-400 text-sm">Verificando...</span>
           </div>
         </div>
       </div>
     );
   }
 
-  // Avatar simulado - depois vem do backend
-  const realPlayers = [
-    { id: "p1", name: "João Silva", avatar: "👤" },
-    { id: "p2", name: "Maria Costa", avatar: "👩" },
-    { id: "p3", name: "Pedro Santos", avatar: "👨" },
-    { id: "p4", name: "Ana Lima", avatar: "👧" },
-  ];
-
-  const getPlayerById = (id?: string) => realPlayers.find((p) => p.id === id);
+  const totalVisiblePlayers =
+    gameState.blueTeam.length + gameState.redTeam.length;
 
   return (
     <div className="min-h-screen bg-gray-900 p-4 md:p-8">
@@ -120,7 +161,7 @@ export default function JogadorPage() {
                 Visualização
               </h1>
               <p className="text-gray-400 text-sm md:text-base">
-                Acompanhando a partida
+                Bem-vindo, {user?.firstName || "Jogador"}!
               </p>
             </div>
           </div>
@@ -163,8 +204,31 @@ export default function JogadorPage() {
               <h3 className="text-white font-bold mb-4 flex items-center gap-2">
                 <Clock className="w-5 h-5" /> Tempo de Jogo
               </h3>
-              <div className="text-5xl md:text-6xl font-bold text-white text-center">
+              <div className="text-5xl md:text-6xl font-bold text-white text-center mb-2">
                 {gameState.displayTime}
+              </div>
+              <div className="flex items-center justify-center gap-2 text-green-400 text-sm">
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                Atualização em tempo real
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Estatísticas */}
+        <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Eye className="w-5 h-5 text-blue-400" />
+              <div>
+                <div className="text-white font-semibold">
+                  Você está vendo {totalVisiblePlayers} jogador
+                  {totalVisiblePlayers !== 1 ? "es" : ""}
+                </div>
+                <div className="text-gray-400 text-sm">
+                  {gameState.blueTeam.length} do {gameState.blueTeamName} •{" "}
+                  {gameState.redTeam.length} do {gameState.redTeamName}
+                </div>
               </div>
             </div>
           </div>
@@ -187,6 +251,22 @@ export default function JogadorPage() {
               <div className="absolute left-0 top-1/2 w-2 h-24 bg-white opacity-70 -translate-y-1/2"></div>
               <div className="absolute right-0 top-1/2 w-2 h-24 bg-white opacity-70 -translate-y-1/2"></div>
 
+              {/* Mensagem se não houver jogadores visíveis */}
+              {totalVisiblePlayers === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="bg-gray-900 bg-opacity-90 rounded-lg p-6 text-center">
+                    <Eye className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                    <div className="text-white font-bold mb-2">
+                      Nenhum jogador visível
+                    </div>
+                    <div className="text-gray-400 text-sm">
+                      O mestre ainda não liberou nenhum jogador para você
+                      visualizar
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Jogadores Time Azul (apenas visíveis) */}
               {gameState.blueTeam.map((player) => {
                 const assignedPlayer = getPlayerById(player.assignedTo);
@@ -204,7 +284,7 @@ export default function JogadorPage() {
                       <div>{player.number}</div>
                     )}
                     {assignedPlayer && (
-                      <div className="absolute -bottom-6 text-[8px] md:text-[10px] bg-gray-900 px-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="absolute -bottom-6 text-[8px] md:text-[10px] bg-gray-900 px-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
                         {assignedPlayer.name}
                       </div>
                     )}
@@ -229,7 +309,7 @@ export default function JogadorPage() {
                       <div>{player.number}</div>
                     )}
                     {assignedPlayer && (
-                      <div className="absolute -bottom-6 text-[8px] md:text-[10px] bg-gray-900 px-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="absolute -bottom-6 text-[8px] md:text-[10px] bg-gray-900 px-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
                         {assignedPlayer.name}
                       </div>
                     )}
@@ -252,12 +332,11 @@ export default function JogadorPage() {
             </div>
           </div>
           <div className="mt-4 bg-gray-700 rounded-lg p-3">
-            <p className="text-gray-400 text-sm text-center">
-              👁️{" "}
-              <strong className="text-white">Modo somente visualização</strong>
+            <p className="text-gray-300 text-sm text-center font-semibold">
+              👁️ Modo Visualização - Somente Leitura
             </p>
             <p className="text-gray-500 text-xs text-center mt-1">
-              Você está vendo apenas os jogadores que o mestre liberou para você
+              Passe o mouse sobre os jogadores para ver os nomes
             </p>
           </div>
         </div>
