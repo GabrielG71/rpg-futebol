@@ -1,17 +1,6 @@
 "use client";
 
-import { useUser, UserButton } from "@clerk/nextjs";
-import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import {
-  Users,
-  Clock,
-  Eye,
-  LogIn,
-  LogOut,
-  RefreshCw,
-  Home,
-} from "lucide-react";
 
 interface Player {
   id: string;
@@ -41,100 +30,99 @@ interface RealPlayer {
 }
 
 export default function JogadorPage() {
-  const { user, isLoaded } = useUser();
-  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [realPlayers, setRealPlayers] = useState<RealPlayer[]>([]);
   const [isActive, setIsActive] = useState(false);
+  const [userId] = useState(
+    () => `user-${Math.random().toString(36).substr(2, 9)}`,
+  );
+  const [userName] = useState(
+    () => `Jogador ${Math.floor(Math.random() * 100)}`,
+  );
 
   useEffect(() => {
-    if (!isLoaded || !user) return;
+    registerPresence();
+    setLoading(false);
+  }, []);
 
-    const roleKey = `user-role:${user.id}`;
-    const savedRole = localStorage.getItem(roleKey);
+  const registerPresence = async () => {
+    try {
+      const existingInfo = await window.storage.get(
+        `user-info:${userId}`,
+        true,
+      );
 
-    if (savedRole !== "jogador") {
-      router.push("/");
-      return;
-    }
+      const userInfo = {
+        name: userName,
+        avatar: "👤",
+        isActive: false,
+        lastSeen: Date.now(),
+      };
 
-    // Registrar presença do jogador
-    const userInfo = {
-      name:
-        user.firstName ||
-        user.username ||
-        user.emailAddresses[0]?.emailAddress.split("@")[0] ||
-        "Jogador",
-      avatar: "👤",
-      isActive: false,
-      lastSeen: Date.now(),
-    };
+      if (existingInfo && existingInfo.value) {
+        const info = JSON.parse(existingInfo.value);
+        userInfo.isActive = info.isActive !== false;
+        setIsActive(info.isActive !== false);
+      } else {
+        setIsActive(false);
+      }
 
-    const existingInfo = localStorage.getItem(`user-info:${user.id}`);
-    if (existingInfo) {
-      const info = JSON.parse(existingInfo);
-      userInfo.isActive = info.isActive !== false;
-      setIsActive(info.isActive !== false);
-    } else {
+      await window.storage.set(
+        `user-info:${userId}`,
+        JSON.stringify(userInfo),
+        true,
+      );
+    } catch (error) {
+      console.log("Erro ao registrar presença:", error);
       setIsActive(false);
     }
+  };
 
-    localStorage.setItem(`user-info:${user.id}`, JSON.stringify(userInfo));
-
-    // Disparar evento para notificar o mestre
-    window.dispatchEvent(new Event("storage"));
-
-    setLoading(false);
-  }, [user, isLoaded, router]);
-
-  // Atualizar presença periodicamente
   useEffect(() => {
-    if (!user) return;
-
-    const updatePresence = () => {
-      const existingInfo = localStorage.getItem(`user-info:${user.id}`);
-      if (existingInfo) {
-        const info = JSON.parse(existingInfo);
-        info.lastSeen = Date.now();
-        localStorage.setItem(`user-info:${user.id}`, JSON.stringify(info));
-        window.dispatchEvent(new Event("storage"));
+    const updatePresence = async () => {
+      try {
+        const existingInfo = await window.storage.get(
+          `user-info:${userId}`,
+          true,
+        );
+        if (existingInfo && existingInfo.value) {
+          const info = JSON.parse(existingInfo.value);
+          info.lastSeen = Date.now();
+          await window.storage.set(
+            `user-info:${userId}`,
+            JSON.stringify(info),
+            true,
+          );
+        }
+      } catch (error) {
+        console.log("Erro ao atualizar presença:", error);
       }
     };
 
     const interval = setInterval(updatePresence, 2000);
     return () => clearInterval(interval);
-  }, [user]);
+  }, [userId]);
 
-  const toggleActive = () => {
-    if (!user) return;
-
+  const toggleActive = async () => {
     const newActiveState = !isActive;
     setIsActive(newActiveState);
 
     const userInfo = {
-      name:
-        user.firstName ||
-        user.username ||
-        user.emailAddresses[0]?.emailAddress.split("@")[0] ||
-        "Jogador",
+      name: userName,
       avatar: "👤",
       isActive: newActiveState,
       lastSeen: Date.now(),
     };
-    localStorage.setItem(`user-info:${user.id}`, JSON.stringify(userInfo));
-    window.dispatchEvent(new Event("storage"));
-  };
 
-  const goToMenu = () => {
-    if (
-      confirm("Voltar ao menu? Você precisará escolher sua função novamente.")
-    ) {
-      if (user) {
-        localStorage.removeItem(`user-role:${user.id}`);
-        localStorage.removeItem(`user-info:${user.id}`);
-      }
-      router.push("/");
+    try {
+      await window.storage.set(
+        `user-info:${userId}`,
+        JSON.stringify(userInfo),
+        true,
+      );
+    } catch (error) {
+      console.error("Erro ao atualizar status:", error);
     }
   };
 
@@ -143,45 +131,56 @@ export default function JogadorPage() {
     loadGame();
   };
 
-  const loadPlayers = () => {
-    const players: RealPlayer[] = [];
+  const loadPlayers = async () => {
+    try {
+      const result = await window.storage.list("user-info:", true);
+      if (result && result.keys) {
+        const players: RealPlayer[] = [];
 
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith("user-info:")) {
-        const userId = key.replace("user-info:", "");
-        const userInfo = localStorage.getItem(key);
-        if (userInfo) {
-          const info = JSON.parse(userInfo);
-          players.push({
-            id: userId,
-            name: info.name,
-            avatar: info.avatar || "👤",
-          });
+        for (const key of result.keys) {
+          try {
+            const userInfo = await window.storage.get(key, true);
+            if (userInfo && userInfo.value) {
+              const info = JSON.parse(userInfo.value);
+              players.push({
+                id: key.replace("user-info:", ""),
+                name: info.name,
+                avatar: info.avatar || "👤",
+              });
+            }
+          } catch (error) {
+            console.log("Erro ao carregar jogador:", error);
+          }
         }
-      }
-    }
 
-    setRealPlayers(players);
+        setRealPlayers(players);
+      }
+    } catch (error) {
+      console.log("Erro ao listar jogadores:", error);
+    }
   };
 
-  const loadGame = () => {
-    if (!user) return;
+  const loadGame = async () => {
+    try {
+      const result = await window.storage.get("current-game", true);
+      if (result && result.value) {
+        const fullGame: GameState = JSON.parse(result.value);
 
-    const gameData = localStorage.getItem("current-game");
-    if (gameData) {
-      const fullGame: GameState = JSON.parse(gameData);
+        const filteredGame = {
+          ...fullGame,
+          blueTeam: fullGame.blueTeam.filter((p) =>
+            p.visibleTo.includes(userId),
+          ),
+          redTeam: fullGame.redTeam.filter((p) => p.visibleTo.includes(userId)),
+        };
 
-      // Filtrar apenas jogadores visíveis para este jogador
-      const filteredGame = {
-        ...fullGame,
-        blueTeam: fullGame.blueTeam.filter((p) =>
-          p.visibleTo.includes(user.id),
-        ),
-        redTeam: fullGame.redTeam.filter((p) => p.visibleTo.includes(user.id)),
-      };
-
-      setGameState(filteredGame);
+        setGameState(filteredGame);
+      } else {
+        setGameState(null);
+      }
+    } catch (error) {
+      console.log("Nenhum jogo encontrado:", error);
+      setGameState(null);
     }
   };
 
@@ -190,11 +189,10 @@ export default function JogadorPage() {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
     loadGame();
     const interval = setInterval(loadGame, 1000);
     return () => clearInterval(interval);
-  }, [user]);
+  }, [userId]);
 
   const getPlayerById = (id?: string) => realPlayers.find((p) => p.id === id);
 
@@ -209,16 +207,8 @@ export default function JogadorPage() {
   if (!gameState) {
     return (
       <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4">
-        <button
-          onClick={goToMenu}
-          className="absolute top-4 left-4 bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded-lg flex items-center gap-2"
-        >
-          <Home className="w-4 h-4" />
-          Voltar ao Menu
-        </button>
-
         <div className="text-center mb-8">
-          <div className="text-6xl mb-4 animate-bounce">⚽</div>
+          <div className="text-6xl mb-4">⚽</div>
           <div className="text-white text-2xl mb-2">
             Aguardando o mestre iniciar a partida...
           </div>
@@ -226,7 +216,25 @@ export default function JogadorPage() {
             O jogo aparecerá aqui assim que o mestre configurar tudo
           </div>
           <div className="inline-flex items-center gap-2 bg-gray-800 px-4 py-2 rounded-lg">
-            <RefreshCw className="w-4 h-4 text-green-400 animate-spin" />
+            <svg
+              className="w-4 h-4 text-green-400 animate-spin"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              />
+            </svg>
             <span className="text-green-400 text-sm">Verificando...</span>
           </div>
         </div>
@@ -241,7 +249,7 @@ export default function JogadorPage() {
             </div>
             <div
               className={`w-3 h-3 rounded-full ${isActive ? "bg-green-400 animate-pulse" : "bg-gray-500"}`}
-            ></div>
+            />
           </div>
 
           <button
@@ -252,17 +260,7 @@ export default function JogadorPage() {
                 : "bg-green-600 hover:bg-green-700 text-white"
             }`}
           >
-            {isActive ? (
-              <>
-                <LogOut className="w-5 h-5" />
-                Sair da Partida
-              </>
-            ) : (
-              <>
-                <LogIn className="w-5 h-5" />
-                Entrar na Partida
-              </>
-            )}
+            {isActive ? "🚪 Sair da Partida" : "✅ Entrar na Partida"}
           </button>
 
           <p className="text-gray-500 text-xs text-center mt-3">
@@ -281,39 +279,26 @@ export default function JogadorPage() {
   return (
     <div className="min-h-screen bg-gray-900 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6 flex justify-between items-center">
           <div className="flex items-center gap-4">
             <div className="text-3xl md:text-4xl">⚽</div>
             <div>
               <h1 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-2">
-                <Eye className="w-6 h-6 md:w-8 md:h-8" />
-                Visualização
+                👁️ Visualização
               </h1>
               <p className="text-gray-400 text-sm md:text-base">
-                Bem-vindo, {user?.firstName || user?.username || "Jogador"}!
+                Bem-vindo, {userName}!
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={goToMenu}
-              className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg flex items-center gap-2"
-            >
-              <Home className="w-4 h-4" />
-              <span className="hidden sm:inline">Menu</span>
-            </button>
-            <UserButton afterSignOutUrl="/" />
-          </div>
         </div>
 
-        {/* Status e Botão Entrar/Sair */}
         <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div className="flex items-center gap-3">
               <div
                 className={`w-4 h-4 rounded-full ${isActive ? "bg-green-400 animate-pulse" : "bg-gray-500"}`}
-              ></div>
+              />
               <div>
                 <div className="text-white font-bold">
                   {isActive ? "🎮 Participante Ativo" : "👁️ Espectador"}
@@ -331,8 +316,7 @@ export default function JogadorPage() {
                 onClick={refreshGame}
                 className="px-4 py-3 rounded-lg font-bold flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white transition-all"
               >
-                <RefreshCw className="w-5 h-5" />
-                <span className="hidden sm:inline">Atualizar</span>
+                🔄 <span className="hidden sm:inline">Atualizar</span>
               </button>
 
               <button
@@ -343,29 +327,17 @@ export default function JogadorPage() {
                     : "bg-green-600 hover:bg-green-700 text-white"
                 }`}
               >
-                {isActive ? (
-                  <>
-                    <LogOut className="w-5 h-5" />
-                    Sair da Partida
-                  </>
-                ) : (
-                  <>
-                    <LogIn className="w-5 h-5" />
-                    Entrar na Partida
-                  </>
-                )}
+                {isActive ? "🚪 Sair da Partida" : "✅ Entrar na Partida"}
               </button>
             </div>
           </div>
         </div>
 
-        {/* Informações do Jogo */}
         <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Placar */}
             <div className="bg-gray-700 rounded-lg p-4 md:p-6">
               <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-                <Users className="w-5 h-5" /> Placar
+                👥 Placar
               </h3>
               <div className="flex justify-between items-center">
                 <div className="text-center flex-1">
@@ -390,27 +362,25 @@ export default function JogadorPage() {
               </div>
             </div>
 
-            {/* Tempo */}
             <div className="bg-gray-700 rounded-lg p-4 md:p-6">
               <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-                <Clock className="w-5 h-5" /> Tempo de Jogo
+                ⏱️ Tempo de Jogo
               </h3>
               <div className="text-5xl md:text-6xl font-bold text-white text-center mb-2">
                 {gameState.displayTime}
               </div>
               <div className="flex items-center justify-center gap-2 text-green-400 text-sm">
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
                 Atualização em tempo real
               </div>
             </div>
           </div>
         </div>
 
-        {/* Estatísticas */}
         <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Eye className="w-5 h-5 text-blue-400" />
+              <span className="text-2xl">👁️</span>
               <div>
                 <div className="text-white font-semibold">
                   Você está vendo {totalVisiblePlayers} jogador
@@ -425,7 +395,6 @@ export default function JogadorPage() {
           </div>
         </div>
 
-        {/* Campo */}
         <div className="bg-gray-800 rounded-lg p-4 md:p-6">
           <h3 className="text-white font-bold mb-4">Campo de Jogo</h3>
           <div
@@ -443,18 +412,18 @@ export default function JogadorPage() {
             <div className="absolute inset-0">
               {!gameState.fieldImage && (
                 <>
-                  <div className="absolute inset-0 border-4 border-white opacity-50"></div>
-                  <div className="absolute left-1/2 top-0 bottom-0 w-1 bg-white opacity-50"></div>
-                  <div className="absolute left-1/2 top-1/2 w-20 h-20 border-4 border-white rounded-full opacity-50 -translate-x-1/2 -translate-y-1/2"></div>
-                  <div className="absolute left-0 top-1/2 w-2 h-24 bg-white opacity-70 -translate-y-1/2"></div>
-                  <div className="absolute right-0 top-1/2 w-2 h-24 bg-white opacity-70 -translate-y-1/2"></div>
+                  <div className="absolute inset-0 border-4 border-white opacity-50" />
+                  <div className="absolute left-1/2 top-0 bottom-0 w-1 bg-white opacity-50" />
+                  <div className="absolute left-1/2 top-1/2 w-20 h-20 border-4 border-white rounded-full opacity-50 -translate-x-1/2 -translate-y-1/2" />
+                  <div className="absolute left-0 top-1/2 w-2 h-24 bg-white opacity-70 -translate-y-1/2" />
+                  <div className="absolute right-0 top-1/2 w-2 h-24 bg-white opacity-70 -translate-y-1/2" />
                 </>
               )}
 
               {totalVisiblePlayers === 0 && (
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="bg-gray-900 bg-opacity-90 rounded-lg p-6 text-center">
-                    <Eye className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                    <div className="text-6xl mb-3">👁️</div>
                     <div className="text-white font-bold mb-2">
                       Nenhum jogador visível
                     </div>
