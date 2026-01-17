@@ -1,6 +1,6 @@
 "use client";
 
-import { useUser, UserButton } from "@clerk/nextjs";
+import { useUser, UserButton, useClerk } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import {
@@ -21,8 +21,8 @@ interface Player {
   x: number;
   y: number;
   number: number;
-  assignedTo?: string; // ID do jogador real
-  visibleTo: string[]; // IDs dos jogadores que podem ver
+  assignedTo?: string;
+  visibleTo: string[];
 }
 
 interface RealPlayer {
@@ -33,23 +33,16 @@ interface RealPlayer {
 
 export default function MestrePage() {
   const { user, isLoaded } = useUser();
+  const { client } = useClerk();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [selectedPlayerButton, setSelectedPlayerButton] = useState<
     string | null
   >(null);
-  const [showVisibilityModal, setShowVisibilityModal] = useState(false);
   const [editingTeamNames, setEditingTeamNames] = useState(false);
   const [editingTime, setEditingTime] = useState(false);
-  const [tempTime, setTempTime] = useState("00:00");
-
-  // Jogadores reais conectados (simulação - depois vai vir do banco)
-  const [realPlayers, setRealPlayers] = useState<RealPlayer[]>([
-    { id: "p1", name: "João Silva", avatar: "👤" },
-    { id: "p2", name: "Maria Costa", avatar: "👩" },
-    { id: "p3", name: "Pedro Santos", avatar: "👨" },
-    { id: "p4", name: "Ana Lima", avatar: "👧" },
-  ]);
+  const [tempTime, setTempTime] = useState("");
+  const [realPlayers, setRealPlayers] = useState<RealPlayer[]>([]);
 
   useEffect(() => {
     if (!isLoaded || !user) return;
@@ -65,11 +58,51 @@ export default function MestrePage() {
     // Carregar jogo salvo se existir
     const savedGame = localStorage.getItem("current-game");
     if (savedGame) {
-      setGameState(JSON.parse(savedGame));
+      const parsed = JSON.parse(savedGame);
+      setGameState(parsed);
     }
+
+    // Carregar jogadores conectados
+    loadConnectedPlayers();
 
     setLoading(false);
   }, [user, isLoaded, router]);
+
+  const loadConnectedPlayers = () => {
+    // Pegar lista de jogadores do localStorage (todos que escolheram "jogador")
+    const players: RealPlayer[] = [];
+
+    // Procurar por todos os user-role salvos
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith("user-role:")) {
+        const role = localStorage.getItem(key);
+        if (role === "jogador") {
+          const userId = key.replace("user-role:", "");
+
+          // Tentar pegar informações do usuário
+          const userInfo = localStorage.getItem(`user-info:${userId}`);
+          if (userInfo) {
+            const info = JSON.parse(userInfo);
+            players.push({
+              id: userId,
+              name: info.name,
+              avatar: info.avatar || "👤",
+            });
+          } else {
+            // Se não tiver info salva, criar placeholder
+            players.push({
+              id: userId,
+              name: `Jogador ${players.length + 1}`,
+              avatar: "👤",
+            });
+          }
+        }
+      }
+    }
+
+    setRealPlayers(players);
+  };
 
   const [gameState, setGameState] = useState({
     blueTeamName: "Time Azul",
@@ -105,6 +138,12 @@ export default function MestrePage() {
       localStorage.setItem("current-game", JSON.stringify(gameState));
     }
   }, [gameState, loading]);
+
+  // Recarregar jogadores a cada 5 segundos
+  useEffect(() => {
+    const interval = setInterval(loadConnectedPlayers, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleMouseDown = (id: string) => {
     setDragging(id);
@@ -203,6 +242,7 @@ export default function MestrePage() {
   const saveTime = () => {
     setGameState((prev) => ({ ...prev, displayTime: tempTime }));
     setEditingTime(false);
+    setTempTime("");
   };
 
   const getPlayerById = (id?: string) => realPlayers.find((p) => p.id === id);
@@ -249,7 +289,6 @@ export default function MestrePage() {
                 <Users className="w-5 h-5" /> Placar
               </h3>
               <div className="space-y-3">
-                {/* Nomes dos times */}
                 {editingTeamNames ? (
                   <div className="space-y-2">
                     <input
@@ -358,7 +397,10 @@ export default function MestrePage() {
                       <Check className="w-4 h-4 inline" /> Salvar
                     </button>
                     <button
-                      onClick={() => setEditingTime(false)}
+                      onClick={() => {
+                        setEditingTime(false);
+                        setTempTime("");
+                      }}
                       className="flex-1 bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded"
                     >
                       <X className="w-4 h-4 inline" /> Cancelar
@@ -393,6 +435,13 @@ export default function MestrePage() {
                 <RotateCcw className="w-4 h-4" />
                 Resetar Jogo
               </button>
+              <button
+                onClick={loadConnectedPlayers}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center justify-center gap-2 mb-2"
+              >
+                <Users className="w-4 h-4" />
+                Atualizar Jogadores
+              </button>
               <div className="text-green-400 text-sm text-center mt-2">
                 ✓ Salvando automaticamente
               </div>
@@ -401,24 +450,40 @@ export default function MestrePage() {
         </div>
 
         {/* Banco de Jogadores */}
-        <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
-          <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-            <Users className="w-5 h-5" /> Jogadores Conectados
-          </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {realPlayers.map((player) => (
-              <div
-                key={player.id}
-                className="bg-gray-700 rounded-lg p-3 text-center"
-              >
-                <div className="text-4xl mb-2">{player.avatar}</div>
-                <div className="text-white text-sm font-semibold truncate">
-                  {player.name}
+        {realPlayers.length > 0 ? (
+          <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
+            <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+              <Users className="w-5 h-5" /> Jogadores Conectados (
+              {realPlayers.length})
+            </h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {realPlayers.map((player) => (
+                <div
+                  key={player.id}
+                  className="bg-gray-700 rounded-lg p-3 text-center hover:bg-gray-600 transition-colors"
+                >
+                  <div className="text-4xl mb-2">{player.avatar}</div>
+                  <div className="text-white text-sm font-semibold truncate">
+                    {player.name}
+                  </div>
+                  <div className="text-gray-400 text-xs truncate">
+                    {player.id.slice(0, 8)}...
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
+            <div className="text-center text-gray-400">
+              <Users className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              <p>Nenhum jogador conectado ainda</p>
+              <p className="text-sm mt-1">
+                Os jogadores aparecerão aqui quando fizerem login
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Campo */}
         <div className="bg-gray-800 rounded-lg p-4 md:p-6">
@@ -461,8 +526,13 @@ export default function MestrePage() {
                       <div>{player.number}</div>
                     )}
                     {assignedPlayer && (
-                      <div className="absolute -bottom-6 text-[8px] bg-gray-900 px-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="absolute -bottom-6 text-[8px] bg-gray-900 px-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
                         {assignedPlayer.name}
+                      </div>
+                    )}
+                    {player.visibleTo.length > 0 && (
+                      <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full text-[8px] flex items-center justify-center">
+                        {player.visibleTo.length}
                       </div>
                     )}
                   </div>
@@ -490,8 +560,13 @@ export default function MestrePage() {
                       <div>{player.number}</div>
                     )}
                     {assignedPlayer && (
-                      <div className="absolute -bottom-6 text-[8px] bg-gray-900 px-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="absolute -bottom-6 text-[8px] bg-gray-900 px-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
                         {assignedPlayer.name}
+                      </div>
+                    )}
+                    {player.visibleTo.length > 0 && (
+                      <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full text-[8px] flex items-center justify-center">
+                        {player.visibleTo.length}
                       </div>
                     )}
                   </div>
@@ -515,15 +590,21 @@ export default function MestrePage() {
           </div>
           <p className="text-gray-400 text-sm mt-4">
             💡 Arraste jogadores e bola | Clique duplo em um jogador para
-            atribuir/configurar
+            atribuir/configurar | Número verde = quantos jogadores podem ver
           </p>
         </div>
       </div>
 
       {/* Modal de Atribuição/Visibilidade */}
       {selectedPlayerButton && currentButton && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
-          <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full max-h-[80vh] overflow-y-auto">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50"
+          onClick={() => setSelectedPlayerButton(null)}
+        >
+          <div
+            className="bg-gray-800 rounded-lg p-6 max-w-md w-full max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-white font-bold text-lg">
                 Configurar Jogador #{currentButton.number}
@@ -546,7 +627,7 @@ export default function MestrePage() {
                   onClick={() =>
                     assignPlayerToButton(selectedPlayerButton, null)
                   }
-                  className={`w-full p-3 rounded flex items-center gap-3 ${
+                  className={`w-full p-3 rounded flex items-center gap-3 transition-colors ${
                     !currentButton.assignedTo
                       ? "bg-green-600"
                       : "bg-gray-700 hover:bg-gray-600"
@@ -558,6 +639,9 @@ export default function MestrePage() {
                       Nenhum (Número {currentButton.number})
                     </div>
                   </div>
+                  {!currentButton.assignedTo && (
+                    <Check className="w-5 h-5 text-white ml-auto" />
+                  )}
                 </button>
                 {realPlayers.map((player) => (
                   <button
@@ -565,18 +649,21 @@ export default function MestrePage() {
                     onClick={() =>
                       assignPlayerToButton(selectedPlayerButton, player.id)
                     }
-                    className={`w-full p-3 rounded flex items-center gap-3 ${
+                    className={`w-full p-3 rounded flex items-center gap-3 transition-colors ${
                       currentButton.assignedTo === player.id
                         ? "bg-green-600"
                         : "bg-gray-700 hover:bg-gray-600"
                     }`}
                   >
                     <div className="text-2xl">{player.avatar}</div>
-                    <div className="text-white text-left">
+                    <div className="text-white text-left flex-1">
                       <div className="font-semibold">{player.name}</div>
+                      <div className="text-xs text-gray-400">
+                        {player.id.slice(0, 12)}...
+                      </div>
                     </div>
                     {currentButton.assignedTo === player.id && (
-                      <Check className="w-5 h-5 text-white ml-auto" />
+                      <Check className="w-5 h-5 text-white" />
                     )}
                   </button>
                 ))}
@@ -586,32 +673,48 @@ export default function MestrePage() {
             {/* Controle de visibilidade */}
             <div>
               <h4 className="text-white font-semibold mb-3">Visível para:</h4>
-              <div className="space-y-2">
-                {realPlayers.map((player) => {
-                  const isVisible = currentButton.visibleTo.includes(player.id);
-                  return (
-                    <button
-                      key={player.id}
-                      onClick={() =>
-                        togglePlayerVisibility(selectedPlayerButton, player.id)
-                      }
-                      className={`w-full p-3 rounded flex items-center gap-3 ${
-                        isVisible ? "bg-green-600" : "bg-gray-700"
-                      } hover:opacity-80`}
-                    >
-                      <div className="text-2xl">{player.avatar}</div>
-                      <div className="text-white text-left flex-1">
-                        <div className="font-semibold">{player.name}</div>
-                      </div>
-                      {isVisible ? (
-                        <Eye className="w-5 h-5 text-white" />
-                      ) : (
-                        <EyeOff className="w-5 h-5 text-gray-400" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+              {realPlayers.length === 0 ? (
+                <div className="text-gray-400 text-sm text-center py-4">
+                  Nenhum jogador conectado
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {realPlayers.map((player) => {
+                    const isVisible = currentButton.visibleTo.includes(
+                      player.id,
+                    );
+                    return (
+                      <button
+                        key={player.id}
+                        onClick={() =>
+                          togglePlayerVisibility(
+                            selectedPlayerButton,
+                            player.id,
+                          )
+                        }
+                        className={`w-full p-3 rounded flex items-center gap-3 transition-colors ${
+                          isVisible
+                            ? "bg-green-600 hover:bg-green-700"
+                            : "bg-gray-700 hover:bg-gray-600"
+                        }`}
+                      >
+                        <div className="text-2xl">{player.avatar}</div>
+                        <div className="text-white text-left flex-1">
+                          <div className="font-semibold">{player.name}</div>
+                          <div className="text-xs text-gray-300">
+                            {player.id.slice(0, 12)}...
+                          </div>
+                        </div>
+                        {isVisible ? (
+                          <Eye className="w-5 h-5 text-white" />
+                        ) : (
+                          <EyeOff className="w-5 h-5 text-gray-400" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>
