@@ -539,7 +539,6 @@ export default function MestrePage() {
             </div>
           </div>
         ) : (
-          <>
         {/* Controles */}
         <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -884,7 +883,7 @@ export default function MestrePage() {
           </p>
         </div>
       </div>
-      </>
+
       {/* Modal de Formações */}
       {showFormations && (
         <div
