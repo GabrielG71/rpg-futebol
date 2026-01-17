@@ -11,26 +11,17 @@ export default function MestrePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function checkRole() {
-      if (!isLoaded || !user) return;
+    if (!isLoaded || !user) return;
 
-      try {
-        const roleKey = `user-role:${user.id}`;
-        const result = await window.storage.get(roleKey);
+    const roleKey = `user-role:${user.id}`;
+    const savedRole = localStorage.getItem(roleKey);
 
-        if (!result || result.value !== "mestre") {
-          router.push("/");
-          return;
-        }
-      } catch (error) {
-        router.push("/");
-        return;
-      }
-
-      setLoading(false);
+    if (savedRole !== "mestre") {
+      router.push("/");
+      return;
     }
 
-    checkRole();
+    setLoading(false);
   }, [user, isLoaded, router]);
 
   const [gameState, setGameState] = useState({
@@ -68,22 +59,10 @@ export default function MestrePage() {
     return () => clearInterval(interval);
   }, [gameState.isPlaying]);
 
-  // Salvar estado do jogo automaticamente
+  // Salvar estado do jogo automaticamente no localStorage
   useEffect(() => {
-    const saveGame = async () => {
-      try {
-        await window.storage.set(
-          "current-game",
-          JSON.stringify(gameState),
-          true,
-        );
-      } catch (error) {
-        console.error("Erro ao salvar jogo:", error);
-      }
-    };
-
     if (!loading) {
-      saveGame();
+      localStorage.setItem("current-game", JSON.stringify(gameState));
     }
   }, [gameState, loading]);
 
