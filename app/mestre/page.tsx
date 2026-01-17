@@ -16,6 +16,8 @@ import {
   Home,
   Grid3x3,
   RefreshCw,
+  Upload,
+  Image as ImageIcon,
 } from "lucide-react";
 
 interface Player {
@@ -25,6 +27,7 @@ interface Player {
   number: number;
   assignedTo?: string;
   visibleTo: string[];
+  customImage?: string;
 }
 
 interface RealPlayer {
@@ -36,88 +39,68 @@ interface RealPlayer {
 
 const FORMATIONS = {
   "3-4-3": [
-    // Goleiro
     { x: 10, y: 50 },
-    // Defesa (3)
     { x: 20, y: 25 },
     { x: 20, y: 50 },
     { x: 20, y: 75 },
-    // Meio (4)
     { x: 35, y: 20 },
     { x: 35, y: 40 },
     { x: 35, y: 60 },
     { x: 35, y: 80 },
-    // Ataque (3)
     { x: 45, y: 30 },
     { x: 45, y: 50 },
     { x: 45, y: 70 },
   ],
   "4-2-4": [
-    // Goleiro
     { x: 10, y: 50 },
-    // Defesa (4)
     { x: 20, y: 20 },
     { x: 20, y: 40 },
     { x: 20, y: 60 },
     { x: 20, y: 80 },
-    // Meio (2)
     { x: 32, y: 40 },
     { x: 32, y: 60 },
-    // Ataque (4)
     { x: 45, y: 20 },
     { x: 45, y: 40 },
     { x: 45, y: 60 },
     { x: 45, y: 80 },
   ],
   "4-4-2": [
-    // Goleiro
     { x: 10, y: 50 },
-    // Defesa (4)
     { x: 20, y: 20 },
     { x: 20, y: 40 },
     { x: 20, y: 60 },
     { x: 20, y: 80 },
-    // Meio (4)
     { x: 32, y: 20 },
     { x: 32, y: 40 },
     { x: 32, y: 60 },
     { x: 32, y: 80 },
-    // Ataque (2)
     { x: 45, y: 40 },
     { x: 45, y: 60 },
   ],
   "4-3-3": [
-    // Goleiro
     { x: 10, y: 50 },
-    // Defesa (4)
     { x: 20, y: 20 },
     { x: 20, y: 40 },
     { x: 20, y: 60 },
     { x: 20, y: 80 },
-    // Meio (3)
     { x: 32, y: 30 },
     { x: 32, y: 50 },
     { x: 32, y: 70 },
-    // Ataque (3)
     { x: 45, y: 30 },
     { x: 45, y: 50 },
     { x: 45, y: 70 },
   ],
   "5-4-1": [
-    // Goleiro
     { x: 10, y: 50 },
-    // Defesa (5)
     { x: 20, y: 15 },
     { x: 20, y: 35 },
     { x: 20, y: 50 },
     { x: 20, y: 65 },
     { x: 20, y: 85 },
-    // Meio (4)
     { x: 32, y: 25 },
     { x: 32, y: 42 },
     { x: 32, y: 58 },
     { x: 32, y: 75 },
-    // Ataque (1)
     { x: 45, y: 50 },
   ],
 };
@@ -137,63 +120,9 @@ export default function MestrePage() {
   const [selectedTeamForFormation, setSelectedTeamForFormation] = useState<
     "blue" | "red" | null
   >(null);
-
-  useEffect(() => {
-    if (!isLoaded || !user) return;
-
-    const roleKey = `user-role:${user.id}`;
-    const savedRole = localStorage.getItem(roleKey);
-
-    if (savedRole !== "mestre") {
-      router.push("/");
-      return;
-    }
-
-    const savedGame = localStorage.getItem("current-game");
-    if (savedGame) {
-      const parsed = JSON.parse(savedGame);
-      setGameState(parsed);
-    }
-
-    loadConnectedPlayers();
-    setLoading(false);
-  }, [user, isLoaded, router]);
-
-  const goToMenu = () => {
-    if (
-      confirm("Voltar ao menu? Você precisará escolher sua função novamente.")
-    ) {
-      if (user) {
-        localStorage.removeItem(`user-role:${user.id}`);
-      }
-      router.push("/");
-    }
-  };
-
-  const loadConnectedPlayers = () => {
-    const players: RealPlayer[] = [];
-
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith("user-info:")) {
-        const userId = key.replace("user-info:", "");
-        const userInfo = localStorage.getItem(key);
-        const userRole = localStorage.getItem(`user-role:${userId}`);
-
-        if (userInfo && userRole === "jogador") {
-          const info = JSON.parse(userInfo);
-          players.push({
-            id: userId,
-            name: info.name,
-            avatar: info.avatar || "👤",
-            isActive: info.isActive !== false,
-          });
-        }
-      }
-    }
-
-    setRealPlayers(players);
-  };
+  const [uploadingImageFor, setUploadingImageFor] = useState<string | null>(
+    null,
+  );
 
   const [gameState, setGameState] = useState({
     blueTeamName: "Time Azul",
@@ -206,6 +135,7 @@ export default function MestrePage() {
         y: 20 + Math.floor(i / 4) * 20,
         number: i + 1,
         visibleTo: [] as string[],
+        customImage: undefined,
       })),
     redTeam: Array(11)
       .fill(null)
@@ -215,24 +145,109 @@ export default function MestrePage() {
         y: 20 + Math.floor(i / 4) * 20,
         number: i + 1,
         visibleTo: [] as string[],
+        customImage: undefined,
       })),
     ball: { x: 50, y: 50 },
     displayTime: "00:00",
     score: { blue: 0, red: 0 },
+    fieldImage: undefined as string | undefined,
   });
 
   const [dragging, setDragging] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!isLoaded || !user) return;
+
+    const roleKey = `user-role:${user.id}`;
+    const savedRole = localStorage.getItem(roleKey);
+
+    if (savedRole !== "mestre") {
+      router.push("/");
+      return;
+    }
+
+    loadGame();
+    loadConnectedPlayers();
+    setLoading(false);
+  }, [user, isLoaded, router]);
+
+  const loadGame = async () => {
+    try {
+      const result = await window.storage.get("current-game", true);
+      if (result && result.value) {
+        const parsed = JSON.parse(result.value);
+        setGameState(parsed);
+      }
+    } catch (error) {
+      console.log("Nenhum jogo salvo ainda");
+    }
+  };
+
+  const saveGame = async (state: typeof gameState) => {
+    try {
+      await window.storage.set("current-game", JSON.stringify(state), true);
+    } catch (error) {
+      console.error("Erro ao salvar jogo:", error);
+    }
+  };
+
+  useEffect(() => {
     if (!loading) {
-      localStorage.setItem("current-game", JSON.stringify(gameState));
+      saveGame(gameState);
     }
   }, [gameState, loading]);
+
+  const loadConnectedPlayers = async () => {
+    try {
+      const result = await window.storage.list("user-info:", true);
+      if (result && result.keys) {
+        const players: RealPlayer[] = [];
+
+        for (const key of result.keys) {
+          try {
+            const userInfo = await window.storage.get(key, true);
+            if (userInfo && userInfo.value) {
+              const info = JSON.parse(userInfo.value);
+              const now = Date.now();
+              const lastSeen = info.lastSeen || 0;
+              const isOnline = now - lastSeen < 10000;
+
+              if (isOnline) {
+                players.push({
+                  id: key.replace("user-info:", ""),
+                  name: info.name,
+                  avatar: info.avatar || "👤",
+                  isActive: info.isActive !== false,
+                });
+              }
+            }
+          } catch (error) {
+            console.log("Erro ao carregar info do jogador:", error);
+          }
+        }
+
+        setRealPlayers(players);
+      }
+    } catch (error) {
+      console.log("Erro ao listar jogadores:", error);
+    }
+  };
 
   useEffect(() => {
     const interval = setInterval(loadConnectedPlayers, 3000);
     return () => clearInterval(interval);
   }, []);
+
+  const goToMenu = () => {
+    if (
+      confirm("Voltar ao menu? Você precisará escolher sua função novamente.")
+    ) {
+      if (user) {
+        localStorage.removeItem(`user-role:${user.id}`);
+      }
+      router.push("/");
+    }
+  };
 
   const applyFormation = (
     formationName: keyof typeof FORMATIONS,
@@ -288,7 +303,7 @@ export default function MestrePage() {
   const resetGame = () => {
     if (!confirm("Tem certeza que deseja resetar todo o jogo?")) return;
 
-    setGameState({
+    const newState = {
       blueTeamName: "Time Azul",
       redTeamName: "Time Vermelho",
       blueTeam: Array(11)
@@ -299,6 +314,7 @@ export default function MestrePage() {
           y: 20 + Math.floor(i / 4) * 20,
           number: i + 1,
           visibleTo: [] as string[],
+          customImage: undefined,
         })),
       redTeam: Array(11)
         .fill(null)
@@ -308,11 +324,15 @@ export default function MestrePage() {
           y: 20 + Math.floor(i / 4) * 20,
           number: i + 1,
           visibleTo: [] as string[],
+          customImage: undefined,
         })),
       ball: { x: 50, y: 50 },
       displayTime: "00:00",
       score: { blue: 0, red: 0 },
-    });
+      fieldImage: undefined,
+    };
+
+    setGameState(newState);
   };
 
   const assignPlayerToButton = (buttonId: string, playerId: string | null) => {
@@ -348,7 +368,7 @@ export default function MestrePage() {
     }));
   };
 
-  const removePlayer = (playerId: string) => {
+  const removePlayer = async (playerId: string) => {
     if (!confirm("Remover este jogador da partida?")) return;
 
     setGameState((prev) => ({
@@ -361,8 +381,11 @@ export default function MestrePage() {
       ),
     }));
 
-    localStorage.removeItem(`user-info:${playerId}`);
-    localStorage.removeItem(`user-role:${playerId}`);
+    try {
+      await window.storage.delete(`user-info:${playerId}`, true);
+    } catch (error) {
+      console.log("Erro ao remover jogador:", error);
+    }
 
     loadConnectedPlayers();
   };
@@ -371,6 +394,51 @@ export default function MestrePage() {
     setGameState((prev) => ({ ...prev, displayTime: tempTime }));
     setEditingTime(false);
     setTempTime("");
+  };
+
+  const handleImageUpload = async (file: File, playerId: string) => {
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64 = e.target?.result as string;
+
+      if (playerId === "field") {
+        setGameState((prev) => ({ ...prev, fieldImage: base64 }));
+      } else {
+        const [team] = playerId.split("-");
+        const teamKey = team === "blue" ? "blueTeam" : "redTeam";
+
+        setGameState((prev) => ({
+          ...prev,
+          [teamKey]: prev[teamKey].map((player) =>
+            player.id === playerId
+              ? { ...player, customImage: base64 }
+              : player,
+          ),
+        }));
+      }
+
+      setUploadingImageFor(null);
+    };
+
+    reader.readAsDataURL(file);
+  };
+
+  const resetPlayerImage = (playerId: string) => {
+    const [team] = playerId.split("-");
+    const teamKey = team === "blue" ? "blueTeam" : "redTeam";
+
+    setGameState((prev) => ({
+      ...prev,
+      [teamKey]: prev[teamKey].map((player) =>
+        player.id === playerId ? { ...player, customImage: undefined } : player,
+      ),
+    }));
+  };
+
+  const resetFieldImage = () => {
+    setGameState((prev) => ({ ...prev, fieldImage: undefined }));
   };
 
   const getPlayerById = (id?: string) => realPlayers.find((p) => p.id === id);
@@ -609,7 +677,7 @@ export default function MestrePage() {
                 >
                   <button
                     onClick={() => removePlayer(player.id)}
-                    className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10"
                   >
                     <Trash2 className="w-3 h-3 text-white" />
                   </button>
@@ -638,21 +706,58 @@ export default function MestrePage() {
 
         {/* Campo */}
         <div className="bg-gray-800 rounded-lg p-4 md:p-6">
-          <h3 className="text-white font-bold mb-4">Campo de Jogo</h3>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-white font-bold">Campo de Jogo</h3>
+            <div className="flex gap-2">
+              <label className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded cursor-pointer flex items-center gap-2">
+                <ImageIcon className="w-4 h-4" />
+                <span className="hidden sm:inline">Imagem do Campo</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleImageUpload(file, "field");
+                  }}
+                />
+              </label>
+              {gameState.fieldImage && (
+                <button
+                  onClick={resetFieldImage}
+                  className="bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded flex items-center gap-2"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span className="hidden sm:inline">Padrão</span>
+                </button>
+              )}
+            </div>
+          </div>
           <div
-            className="relative w-full bg-green-700 rounded-lg overflow-hidden cursor-move"
-            style={{ paddingBottom: "66.67%" }}
+            className="relative w-full rounded-lg overflow-hidden cursor-move"
+            style={{
+              paddingBottom: "66.67%",
+              backgroundImage: gameState.fieldImage
+                ? `url(${gameState.fieldImage})`
+                : "none",
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              backgroundColor: gameState.fieldImage ? "transparent" : "#15803d",
+            }}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
           >
             <div className="absolute inset-0">
-              <div className="absolute inset-0 border-4 border-white opacity-50"></div>
-              <div className="absolute left-1/2 top-0 bottom-0 w-1 bg-white opacity-50"></div>
-              <div className="absolute left-1/2 top-1/2 w-20 h-20 border-4 border-white rounded-full opacity-50 -translate-x-1/2 -translate-y-1/2"></div>
-
-              <div className="absolute left-0 top-1/2 w-2 h-24 bg-white opacity-70 -translate-y-1/2"></div>
-              <div className="absolute right-0 top-1/2 w-2 h-24 bg-white opacity-70 -translate-y-1/2"></div>
+              {!gameState.fieldImage && (
+                <>
+                  <div className="absolute inset-0 border-4 border-white opacity-50"></div>
+                  <div className="absolute left-1/2 top-0 bottom-0 w-1 bg-white opacity-50"></div>
+                  <div className="absolute left-1/2 top-1/2 w-20 h-20 border-4 border-white rounded-full opacity-50 -translate-x-1/2 -translate-y-1/2"></div>
+                  <div className="absolute left-0 top-1/2 w-2 h-24 bg-white opacity-70 -translate-y-1/2"></div>
+                  <div className="absolute right-0 top-1/2 w-2 h-24 bg-white opacity-70 -translate-y-1/2"></div>
+                </>
+              )}
 
               {gameState.blueTeam.map((player) => {
                 const assignedPlayer = getPlayerById(player.assignedTo);
@@ -666,9 +771,15 @@ export default function MestrePage() {
                       }
                     }}
                     style={{ left: `${player.x}%`, top: `${player.y}%` }}
-                    className="absolute w-10 h-10 bg-blue-500 border-2 border-white rounded-full flex flex-col items-center justify-center text-white font-bold text-xs cursor-grab active:cursor-grabbing transform -translate-x-1/2 -translate-y-1/2 hover:scale-110 transition-transform shadow-lg group"
+                    className="absolute w-10 h-10 bg-blue-500 border-2 border-white rounded-full flex flex-col items-center justify-center text-white font-bold text-xs cursor-grab active:cursor-grabbing transform -translate-x-1/2 -translate-y-1/2 hover:scale-110 transition-transform shadow-lg group overflow-hidden"
                   >
-                    {assignedPlayer ? (
+                    {player.customImage ? (
+                      <img
+                        src={player.customImage}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : assignedPlayer ? (
                       <div className="text-lg">{assignedPlayer.avatar}</div>
                     ) : (
                       <div>{player.number}</div>
@@ -699,9 +810,15 @@ export default function MestrePage() {
                       }
                     }}
                     style={{ left: `${player.x}%`, top: `${player.y}%` }}
-                    className="absolute w-10 h-10 bg-red-500 border-2 border-white rounded-full flex flex-col items-center justify-center text-white font-bold text-xs cursor-grab active:cursor-grabbing transform -translate-x-1/2 -translate-y-1/2 hover:scale-110 transition-transform shadow-lg group"
+                    className="absolute w-10 h-10 bg-red-500 border-2 border-white rounded-full flex flex-col items-center justify-center text-white font-bold text-xs cursor-grab active:cursor-grabbing transform -translate-x-1/2 -translate-y-1/2 hover:scale-110 transition-transform shadow-lg group overflow-hidden"
                   >
-                    {assignedPlayer ? (
+                    {player.customImage ? (
+                      <img
+                        src={player.customImage}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : assignedPlayer ? (
                       <div className="text-lg">{assignedPlayer.avatar}</div>
                     ) : (
                       <div>{player.number}</div>
@@ -859,6 +976,47 @@ export default function MestrePage() {
               >
                 <X className="w-6 h-6" />
               </button>
+            </div>
+
+            {/* Upload de Imagem do Jogador */}
+            <div className="mb-6 bg-gray-700 rounded-lg p-4">
+              <h4 className="text-white font-semibold mb-3 flex items-center gap-2">
+                <ImageIcon className="w-4 h-4" />
+                Imagem Customizada
+              </h4>
+              <div className="flex gap-2">
+                <label className="flex-1 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded cursor-pointer flex items-center justify-center gap-2">
+                  <Upload className="w-4 h-4" />
+                  Upload
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleImageUpload(file, selectedPlayerButton);
+                    }}
+                  />
+                </label>
+                {currentButton.customImage && (
+                  <button
+                    onClick={() => resetPlayerImage(selectedPlayerButton)}
+                    className="bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded flex items-center gap-2"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    Resetar
+                  </button>
+                )}
+              </div>
+              {currentButton.customImage && (
+                <div className="mt-3 flex justify-center">
+                  <img
+                    src={currentButton.customImage}
+                    alt="Preview"
+                    className="w-20 h-20 rounded-full object-cover border-2 border-white"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="mb-6">
