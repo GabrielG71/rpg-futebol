@@ -12,47 +12,32 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function checkUserRole() {
-      if (!isSignedIn || !user) {
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const roleKey = `user-role:${user.id}`;
-        const result = await window.storage.get(roleKey);
-
-        if (result && result.value) {
-          const role = result.value as "mestre" | "jogador";
-          setUserRole(role);
-          // Redireciona automaticamente
-          router.push(`/${role}`);
-        }
-      } catch (error) {
-        console.log("Usuário novo, precisa escolher papel");
-      } finally {
-        setLoading(false);
-      }
+    if (!isSignedIn || !user) {
+      setLoading(false);
+      return;
     }
 
-    if (isLoaded) {
-      checkUserRole();
+    const roleKey = `user-role:${user.id}`;
+    const savedRole = localStorage.getItem(roleKey) as
+      | "mestre"
+      | "jogador"
+      | null;
+
+    if (savedRole) {
+      setUserRole(savedRole);
+      router.push(`/${savedRole}`);
+    } else {
+      setLoading(false);
     }
   }, [isSignedIn, user, isLoaded, router]);
 
-  const selectRole = async (role: "mestre" | "jogador") => {
+  const selectRole = (role: "mestre" | "jogador") => {
     if (!user) return;
 
-    setLoading(true);
-    try {
-      const roleKey = `user-role:${user.id}`;
-      await window.storage.set(roleKey, role);
-      setUserRole(role);
-      router.push(`/${role}`);
-    } catch (error) {
-      console.error("Erro ao salvar papel:", error);
-      setLoading(false);
-    }
+    const roleKey = `user-role:${user.id}`;
+    localStorage.setItem(roleKey, role);
+    setUserRole(role);
+    router.push(`/${role}`);
   };
 
   if (!isLoaded || loading) {
@@ -117,7 +102,7 @@ export default function Home() {
             <Trophy className="w-16 h-16 mx-auto mb-4 group-hover:rotate-12 transition-transform" />
             <h2 className="text-2xl font-bold mb-2">Mestre</h2>
             <p className="text-blue-100 text-sm">
-              Controle o campo, o tempo e narr e a história
+              Controle o campo, o tempo e narre a história
             </p>
           </button>
 
