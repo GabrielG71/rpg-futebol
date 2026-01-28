@@ -1,9 +1,19 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { gameStorage } from "@/lib/firebase";
-import { RefreshCw, Home, Users, LogOut, AlertCircle } from "lucide-react";
+import {
+  RefreshCw,
+  Home,
+  Users,
+  LogOut,
+  AlertCircle,
+  Edit2,
+  Check,
+  X,
+} from "lucide-react";
 
 interface Player {
   id: string;
@@ -34,6 +44,7 @@ interface RealPlayer {
 }
 
 export default function JogadorPage() {
+  const { user } = useUser();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -41,27 +52,91 @@ export default function JogadorPage() {
   const [isActive, setIsActive] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [forceRefresh, setForceRefresh] = useState(0);
-  const [userId] = useState(
-    () => `user-${Math.random().toString(36).substr(2, 9)}`,
-  );
-  const [userName] = useState(
-    () => `Jogador ${Math.floor(Math.random() * 100)}`,
-  );
+  const [editingName, setEditingName] = useState(false);
+  const [tempName, setTempName] = useState("");
 
-  // Função para voltar ao menu e escolher papel
+  // Usar ID do Clerk se disponível, senão gerar um aleatório
+  const [userId, setUserId] = useState<string>("");
+  const [userName, setUserName] = useState<string>("");
+
+  // Inicializar usuário
+  useEffect(() => {
+    if (user) {
+      // Usar ID do Clerk
+      const clerkId = user.id;
+      setUserId(clerkId);
+
+      // Tentar carregar nome salvo, senão usar nome do Clerk ou padrão
+      const savedName = localStorage.getItem(`player-name:${clerkId}`);
+      if (savedName) {
+        setUserName(savedName);
+      } else {
+        const defaultName =
+          user.firstName || `Jogador ${Math.floor(Math.random() * 100)}`;
+        setUserName(defaultName);
+        localStorage.setItem(`player-name:${clerkId}`, defaultName);
+      }
+
+      // Salvar role no localStorage com ID do Clerk
+      localStorage.setItem(`user-role:${clerkId}`, "jogador");
+    } else {
+      // Fallback para usuário anônimo
+      const anonId = `user-${Math.random().toString(36).substr(2, 9)}`;
+      const anonName = `Jogador ${Math.floor(Math.random() * 100)}`;
+      setUserId(anonId);
+      setUserName(anonName);
+      localStorage.setItem(`user-role:${anonId}`, "jogador");
+      localStorage.setItem(`player-name:${anonId}`, anonName);
+    }
+  }, [user]);
+
+  // Função para voltar ao menu e escolher papel - CORRIGIDA
   const goToMenu = () => {
     if (confirm("Voltar ao menu para escolher outro papel?")) {
-      localStorage.removeItem(`user-role:${userId}`);
-      router.push("/");
+      // Remover do localStorage com o ID correto
+      if (userId) {
+        localStorage.removeItem(`user-role:${userId}`);
+      }
+      // Forçar recarregamento da página
+      window.location.href = "/";
+    }
+  };
+
+  // Salvar nome do jogador
+  const savePlayerName = () => {
+    if (tempName.trim()) {
+      setUserName(tempName);
+      if (userId) {
+        localStorage.setItem(`player-name:${userId}`, tempName);
+        // Atualizar no Firebase também
+        updatePlayerNameInFirebase(tempName);
+      }
+    }
+    setEditingName(false);
+    setTempName("");
+  };
+
+  // Atualizar nome no Firebase
+  const updatePlayerNameInFirebase = async (name: string) => {
+    if (!userId) return;
+
+    try {
+      const playerRef = ref(database, `players/${userId}/name`);
+      await set(playerRef, name);
+      console.log("✅ Nome atualizado no Firebase:", name);
+    } catch (error) {
+      console.error("❌ Erro ao atualizar nome:", error);
     }
   };
 
   // Registrar presença inicial
   useEffect(() => {
+    if (!userId || !userName) return;
+
     const registerUser = async () => {
       try {
         await gameStorage.registerPlayer(userId, userName, false);
-        console.log("✅ Jogador registrado:", userId);
+        console.log("✅ Jogador registrado:", userId, userName);
       } catch (error) {
         console.error("❌ Erro ao registrar jogador:", error);
       }
@@ -69,13 +144,12 @@ export default function JogadorPage() {
 
     registerUser();
     setLoading(false);
-
-    // Salvar role no localStorage
-    localStorage.setItem(`user-role:${userId}`, "jogador");
   }, [userId, userName]);
 
   // Heartbeat - manter presença ativa
   useEffect(() => {
+    if (!userId) return;
+
     const heartbeat = setInterval(async () => {
       try {
         await gameStorage.updatePlayerPresence(userId);
@@ -87,22 +161,24 @@ export default function JogadorPage() {
     return () => clearInterval(heartbeat);
   }, [userId]);
 
-  // Listener em tempo real para o estado do jogo
+  // Listener em tempo real para o estado do jogo - CORRIGIDO
   useEffect(() => {
-    console.log("🎮 Iniciando listener do jogo...");
+    if (!userId) return;
+
+    console.log("🎮 Iniciando listener do jogo para usuário:", userId);
 
     const unsubscribe = gameStorage.onGameStateChange((fullGame: GameState) => {
-      console.log("📡 Jogo atualizado:", {
-        gameStarted: fullGame.gameStarted,
-        blueTeam: fullGame.blueTeam?.length,
-        redTeam: fullGame.redTeam?.length,
+      console.log("📡 Jogo atualizado no listener:", {
+        gameStarted: fullGame?.gameStarted,
+        hasGameState: !!fullGame,
         lastUpdate: new Date().toLocaleTimeString(),
       });
 
       setLastUpdate(new Date());
 
-      if (fullGame.gameStarted !== true) {
-        console.log("⏸️ Partida não iniciada ou pausada");
+      // Se não houver dados do jogo ou partida não iniciada
+      if (!fullGame || fullGame.gameStarted !== true) {
+        console.log("⏸️ Partida não iniciada ou sem dados");
         setGameState(null);
         return;
       }
@@ -111,13 +187,16 @@ export default function JogadorPage() {
 
       const filteredGame = {
         ...fullGame,
-        blueTeam: fullGame.blueTeam.filter((p) => p.visibleTo.includes(userId)),
-        redTeam: fullGame.redTeam.filter((p) => p.visibleTo.includes(userId)),
+        blueTeam:
+          fullGame.blueTeam?.filter((p) => p.visibleTo.includes(userId)) || [],
+        redTeam:
+          fullGame.redTeam?.filter((p) => p.visibleTo.includes(userId)) || [],
       };
 
       console.log("👁️ Jogadores visíveis:", {
         blue: filteredGame.blueTeam.length,
         red: filteredGame.redTeam.length,
+        userId: userId,
       });
 
       setGameState(filteredGame);
@@ -126,7 +205,7 @@ export default function JogadorPage() {
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [userId, forceRefresh]); // Adiciona forceRefresh como dependência
+  }, [userId, forceRefresh]);
 
   // Listener em tempo real para jogadores conectados
   useEffect(() => {
@@ -140,6 +219,8 @@ export default function JogadorPage() {
   }, []);
 
   const toggleActive = async () => {
+    if (!userId) return;
+
     const newActiveState = !isActive;
     setIsActive(newActiveState);
 
@@ -153,32 +234,36 @@ export default function JogadorPage() {
     }
   };
 
-  // Função para forçar atualização manual
-  const handleForceRefresh = () => {
+  // Função para forçar atualização manual - MELHORADA
+  const handleForceRefresh = async () => {
     console.log("🔄 Forçando atualização manual...");
     setForceRefresh((prev) => prev + 1);
 
-    // Também recarrega os dados do Firebase manualmente
-    gameStorage.loadGameState().then((fullGame: GameState | null) => {
-      if (fullGame) {
-        if (fullGame.gameStarted !== true) {
-          setGameState(null);
-          return;
-        }
+    try {
+      // Recarrega os dados do Firebase manualmente
+      const fullGame = await gameStorage.loadGameState();
 
-        const filteredGame = {
-          ...fullGame,
-          blueTeam: fullGame.blueTeam.filter((p) =>
-            p.visibleTo.includes(userId),
-          ),
-          redTeam: fullGame.redTeam.filter((p) => p.visibleTo.includes(userId)),
-        };
-
-        setGameState(filteredGame);
-        setLastUpdate(new Date());
-        console.log("✅ Dados atualizados manualmente!");
+      if (!fullGame || fullGame.gameStarted !== true) {
+        console.log("⚠️ Partida não iniciada após atualização manual");
+        setGameState(null);
+        return;
       }
-    });
+
+      const filteredGame = {
+        ...fullGame,
+        blueTeam: fullGame.blueTeam.filter((p) => p.visibleTo.includes(userId)),
+        redTeam: fullGame.redTeam.filter((p) => p.visibleTo.includes(userId)),
+      };
+
+      setGameState(filteredGame);
+      setLastUpdate(new Date());
+      console.log("✅ Dados atualizados manualmente!", {
+        blue: filteredGame.blueTeam.length,
+        red: filteredGame.redTeam.length,
+      });
+    } catch (error) {
+      console.error("❌ Erro ao atualizar manualmente:", error);
+    }
   };
 
   const getPlayerById = (id?: string) => realPlayers.find((p) => p.id === id);
@@ -242,6 +327,57 @@ export default function JogadorPage() {
         </div>
 
         <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
+          {/* Editar nome do jogador */}
+          <div className="mb-4">
+            {editingName ? (
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={tempName}
+                  onChange={(e) => setTempName(e.target.value)}
+                  className="w-full bg-gray-700 text-white p-2 rounded"
+                  placeholder="Seu nome"
+                  autoFocus
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={savePlayerName}
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white p-2 rounded flex items-center justify-center gap-1"
+                  >
+                    <Check className="w-4 h-4" />
+                    Salvar
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditingName(false);
+                      setTempName("");
+                    }}
+                    className="flex-1 bg-gray-600 hover:bg-gray-500 text-white p-2 rounded flex items-center justify-center gap-1"
+                  >
+                    <X className="w-4 h-4" />
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-white font-semibold">Seu nome:</div>
+                  <div className="text-gray-300">{userName}</div>
+                </div>
+                <button
+                  onClick={() => {
+                    setTempName(userName);
+                    setEditingName(true);
+                  }}
+                  className="text-blue-400 hover:text-blue-300"
+                >
+                  <Edit2 className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-white font-bold">Status da Partida</h3>
@@ -320,13 +456,53 @@ export default function JogadorPage() {
         <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="flex items-center gap-4">
             <div className="text-3xl md:text-4xl">⚽</div>
-            <div>
+            <div className="flex-1">
               <h1 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-2">
                 👁️ Visualização
               </h1>
-              <p className="text-gray-400 text-sm md:text-base">
-                Bem-vindo, {userName}!
-              </p>
+              <div className="flex items-center gap-2">
+                {editingName ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={tempName}
+                      onChange={(e) => setTempName(e.target.value)}
+                      className="bg-gray-700 text-white p-1 rounded text-sm"
+                      autoFocus
+                    />
+                    <button
+                      onClick={savePlayerName}
+                      className="bg-green-600 hover:bg-green-700 p-1 rounded"
+                    >
+                      <Check className="w-3 h-3 text-white" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingName(false);
+                        setTempName("");
+                      }}
+                      className="bg-gray-600 hover:bg-gray-500 p-1 rounded"
+                    >
+                      <X className="w-3 h-3 text-white" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-gray-400 text-sm md:text-base">
+                      Bem-vindo, {userName}!
+                    </p>
+                    <button
+                      onClick={() => {
+                        setTempName(userName);
+                        setEditingName(true);
+                      }}
+                      className="text-blue-400 hover:text-blue-300"
+                    >
+                      <Edit2 className="w-3 h-3" />
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
@@ -474,7 +650,7 @@ export default function JogadorPage() {
           </div>
         </div>
 
-        {/* Campo de Jogo */}
+        {/* Campo de Jogo - COM PREVENÇÃO DE ARRASTAR IMAGEM */}
         <div className="bg-gray-800 rounded-lg p-4 md:p-6">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-white font-bold">Campo de Jogo</h3>
@@ -539,22 +715,26 @@ export default function JogadorPage() {
                     key={player.id}
                     style={{ left: `${player.x}%`, top: `${player.y}%` }}
                     className="absolute w-8 h-8 md:w-10 md:h-10 bg-blue-500 border-2 border-white rounded-full flex flex-col items-center justify-center text-white font-bold text-xs transform -translate-x-1/2 -translate-y-1/2 shadow-lg transition-all group overflow-hidden"
+                    // Prevenir arrastar imagem
+                    onDragStart={(e) => e.preventDefault()}
                   >
                     {player.customImage ? (
                       <img
                         src={player.customImage}
                         alt=""
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover pointer-events-none" // Adicionado pointer-events-none
+                        draggable="false"
+                        onDragStart={(e) => e.preventDefault()}
                       />
                     ) : assignedPlayer ? (
-                      <div className="text-base md:text-lg">
+                      <div className="text-base md:text-lg pointer-events-none">
                         {assignedPlayer.avatar}
                       </div>
                     ) : (
-                      <div>{player.number}</div>
+                      <div className="pointer-events-none">{player.number}</div>
                     )}
                     {assignedPlayer && (
-                      <div className="absolute -bottom-6 text-[8px] md:text-[10px] bg-gray-900 px-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                      <div className="absolute -bottom-6 text-[8px] md:text-[10px] bg-gray-900 px-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
                         {assignedPlayer.name}
                       </div>
                     )}
@@ -569,22 +749,26 @@ export default function JogadorPage() {
                     key={player.id}
                     style={{ left: `${player.x}%`, top: `${player.y}%` }}
                     className="absolute w-8 h-8 md:w-10 md:h-10 bg-red-500 border-2 border-white rounded-full flex flex-col items-center justify-center text-white font-bold text-xs transform -translate-x-1/2 -translate-y-1/2 shadow-lg transition-all group overflow-hidden"
+                    // Prevenir arrastar imagem
+                    onDragStart={(e) => e.preventDefault()}
                   >
                     {player.customImage ? (
                       <img
                         src={player.customImage}
                         alt=""
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover pointer-events-none" // Adicionado pointer-events-none
+                        draggable="false"
+                        onDragStart={(e) => e.preventDefault()}
                       />
                     ) : assignedPlayer ? (
-                      <div className="text-base md:text-lg">
+                      <div className="text-base md:text-lg pointer-events-none">
                         {assignedPlayer.avatar}
                       </div>
                     ) : (
-                      <div>{player.number}</div>
+                      <div className="pointer-events-none">{player.number}</div>
                     )}
                     {assignedPlayer && (
-                      <div className="absolute -bottom-6 text-[8px] md:text-[10px] bg-gray-900 px-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                      <div className="absolute -bottom-6 text-[8px] md:text-[10px] bg-gray-900 px-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
                         {assignedPlayer.name}
                       </div>
                     )}

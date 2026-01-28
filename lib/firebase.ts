@@ -176,6 +176,17 @@ export const gameStorage = {
     }
   },
 
+  async updatePlayerName(userId: string, name: string) {
+    try {
+      const playerRef = ref(database, `players/${userId}/name`);
+      await set(playerRef, name);
+      console.log(`✅ Nome atualizado para ${userId}: ${name}`);
+    } catch (error) {
+      console.error("❌ Erro ao atualizar nome:", error);
+      throw error;
+    }
+  },
+
   // Atualizar status ativo/inativo do jogador
   async updatePlayerActive(userId: string, isActive: boolean) {
     try {

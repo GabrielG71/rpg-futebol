@@ -4,6 +4,8 @@ import { useUser, UserButton } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { gameStorage } from "@/lib/firebase";
+import { database } from "@/lib/firebase";
+import { ref, set } from "firebase/database";
 import {
   RotateCcw,
   Users,
@@ -19,6 +21,7 @@ import {
   RefreshCw,
   Upload,
   Image as ImageIcon,
+  User,
 } from "lucide-react";
 
 interface Player {
@@ -122,6 +125,12 @@ export default function MestrePage() {
   const [selectedTeamForFormation, setSelectedTeamForFormation] = useState<
     "blue" | "red" | null
   >(null);
+
+  // Novos estados para edição de nomes de jogadores
+  const [editingPlayerName, setEditingPlayerName] = useState<string | null>(
+    null,
+  );
+  const [tempPlayerName, setTempPlayerName] = useState("");
 
   const [gameState, setGameState] = useState({
     blueTeamName: "Time Azul",
@@ -236,6 +245,22 @@ export default function MestrePage() {
         localStorage.removeItem(`user-role:${user.id}`);
       }
       router.push("/");
+    }
+  };
+
+  // Nova função: Atualizar nome do jogador no Firebase
+  const updatePlayerName = async (playerId: string, newName: string) => {
+    try {
+      const playerRef = ref(database, `players/${playerId}/name`);
+      await set(playerRef, newName);
+      console.log(`✅ Nome atualizado para ${playerId}: ${newName}`);
+
+      // Atualizar a lista de jogadores localmente também
+      setRealPlayers((prev) =>
+        prev.map((p) => (p.id === playerId ? { ...p, name: newName } : p)),
+      );
+    } catch (error) {
+      console.error("❌ Erro ao atualizar nome do jogador:", error);
     }
   };
 
@@ -464,13 +489,16 @@ export default function MestrePage() {
     <div className="min-h-screen bg-gray-900 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <button
-          onClick={loadGame}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg flex items-center gap-2"
-        >
-          <RefreshCw className="w-4 h-4" />
-          <span className="hidden sm:inline">Recarregar</span>
-        </button>
+        <div className="flex justify-between items-center mb-4">
+          <button
+            onClick={loadGame}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span className="hidden sm:inline">Recarregar</span>
+          </button>
+        </div>
+
         <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6 flex justify-between items-center">
           <div className="flex items-center gap-4">
             <div className="text-3xl md:text-4xl">⚽</div>
@@ -740,7 +768,7 @@ export default function MestrePage() {
               </div>
             </div>
 
-            {/* Banco de Jogadores */}
+            {/* Banco de Jogadores - COM EDIÇÃO DE NOMES */}
             {activeRealPlayers.length > 0 ? (
               <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
                 <h3 className="text-white font-bold mb-4 flex items-center gap-2">
@@ -753,21 +781,76 @@ export default function MestrePage() {
                       key={player.id}
                       className="bg-gray-700 rounded-lg p-3 relative group"
                     >
-                      <button
-                        onClick={() => removePlayer(player.id)}
-                        className="absolute top-2 right-2 bg-red-600 hover:bg-red-700 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                      >
-                        <Trash2 className="w-3 h-3 text-white" />
-                      </button>
-                      <div className="text-center">
-                        <div className="text-4xl mb-2">{player.avatar}</div>
-                        <div className="text-white text-sm font-semibold truncate">
-                          {player.name}
-                        </div>
-                        <div className="text-green-400 text-xs mt-1">
-                          ● Ativo
-                        </div>
+                      <div className="absolute top-2 right-2 flex gap-1 z-10">
+                        <button
+                          onClick={() => {
+                            setTempPlayerName(player.name);
+                            setEditingPlayerName(player.id);
+                          }}
+                          className="bg-blue-600 hover:bg-blue-700 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Editar nome"
+                        >
+                          <Edit2 className="w-3 h-3 text-white" />
+                        </button>
+                        <button
+                          onClick={() => removePlayer(player.id)}
+                          className="bg-red-600 hover:bg-red-700 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Remover jogador"
+                        >
+                          <Trash2 className="w-3 h-3 text-white" />
+                        </button>
                       </div>
+
+                      {editingPlayerName === player.id ? (
+                        <div className="text-center">
+                          <div className="text-4xl mb-2">{player.avatar}</div>
+                          <input
+                            type="text"
+                            value={tempPlayerName}
+                            onChange={(e) => setTempPlayerName(e.target.value)}
+                            className="w-full bg-gray-600 text-white text-center rounded p-1 mb-1"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                updatePlayerName(player.id, tempPlayerName);
+                                setEditingPlayerName(null);
+                              } else if (e.key === "Escape") {
+                                setEditingPlayerName(null);
+                              }
+                            }}
+                          />
+                          <div className="flex gap-1 justify-center">
+                            <button
+                              onClick={() => {
+                                updatePlayerName(player.id, tempPlayerName);
+                                setEditingPlayerName(null);
+                              }}
+                              className="bg-green-600 hover:bg-green-700 p-1 rounded"
+                            >
+                              <Check className="w-3 h-3 text-white" />
+                            </button>
+                            <button
+                              onClick={() => setEditingPlayerName(null)}
+                              className="bg-gray-600 hover:bg-gray-500 p-1 rounded"
+                            >
+                              <X className="w-3 h-3 text-white" />
+                            </button>
+                          </div>
+                          <div className="text-green-400 text-xs mt-1">
+                            ● Ativo
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center">
+                          <div className="text-4xl mb-2">{player.avatar}</div>
+                          <div className="text-white text-sm font-semibold truncate">
+                            {player.name}
+                          </div>
+                          <div className="text-green-400 text-xs mt-1">
+                            ● Ativo
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -860,7 +943,9 @@ export default function MestrePage() {
                           <img
                             src={player.customImage}
                             alt=""
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-cover pointer-events-none"
+                            draggable="false"
+                            onDragStart={(e) => e.preventDefault()}
                           />
                         ) : assignedPlayer ? (
                           <div className="text-lg">{assignedPlayer.avatar}</div>
@@ -868,12 +953,12 @@ export default function MestrePage() {
                           <div>{player.number}</div>
                         )}
                         {assignedPlayer && (
-                          <div className="absolute -bottom-6 text-[8px] bg-gray-900 px-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                          <div className="absolute -bottom-6 text-[8px] bg-gray-900 px-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
                             {assignedPlayer.name}
                           </div>
                         )}
                         {player.visibleTo.length > 0 && (
-                          <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full text-[8px] flex items-center justify-center">
+                          <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full text-[8px] flex items-center justify-center pointer-events-none">
                             {player.visibleTo.length}
                           </div>
                         )}
@@ -899,7 +984,9 @@ export default function MestrePage() {
                           <img
                             src={player.customImage}
                             alt=""
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-cover pointer-events-none"
+                            draggable="false"
+                            onDragStart={(e) => e.preventDefault()}
                           />
                         ) : assignedPlayer ? (
                           <div className="text-lg">{assignedPlayer.avatar}</div>
@@ -907,12 +994,12 @@ export default function MestrePage() {
                           <div>{player.number}</div>
                         )}
                         {assignedPlayer && (
-                          <div className="absolute -bottom-6 text-[8px] bg-gray-900 px-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                          <div className="absolute -bottom-6 text-[8px] bg-gray-900 px-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
                             {assignedPlayer.name}
                           </div>
                         )}
                         {player.visibleTo.length > 0 && (
-                          <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full text-[8px] flex items-center justify-center">
+                          <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full text-[8px] flex items-center justify-center pointer-events-none">
                             {player.visibleTo.length}
                           </div>
                         )}
