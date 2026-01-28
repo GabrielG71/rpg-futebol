@@ -4,15 +4,18 @@ import { useState, useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { gameStorage } from "@/lib/firebase";
+import { database } from "@/lib/firebase";
+import { ref, set } from "firebase/database";
 import {
   RefreshCw,
   Home,
   Users,
-  LogOut,
   AlertCircle,
   Edit2,
   Check,
   X,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 interface Player {
@@ -41,10 +44,11 @@ interface RealPlayer {
   id: string;
   name: string;
   avatar: string;
+  isActive: boolean;
 }
 
 export default function JogadorPage() {
-  const { user } = useUser();
+  const { user, isLoaded } = useUser();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -54,97 +58,102 @@ export default function JogadorPage() {
   const [forceRefresh, setForceRefresh] = useState(0);
   const [editingName, setEditingName] = useState(false);
   const [tempName, setTempName] = useState("");
+  const [debugMode, setDebugMode] = useState(false);
 
-  // Usar ID do Clerk se disponível, senão gerar um aleatório
+  // IDs do usuário
   const [userId, setUserId] = useState<string>("");
   const [userName, setUserName] = useState<string>("");
+  const [userAvatar, setUserAvatar] = useState<string>("👤");
 
   // Inicializar usuário
   useEffect(() => {
+    if (!isLoaded) return;
+
     if (user) {
       // Usar ID do Clerk
       const clerkId = user.id;
       setUserId(clerkId);
 
-      // Tentar carregar nome salvo, senão usar nome do Clerk ou padrão
+      // Gerar nome e avatar
       const savedName = localStorage.getItem(`player-name:${clerkId}`);
+      const savedAvatar = localStorage.getItem(`player-avatar:${clerkId}`);
+
       if (savedName) {
         setUserName(savedName);
       } else {
         const defaultName =
-          user.firstName || `Jogador ${Math.floor(Math.random() * 100)}`;
+          user.firstName || `Jogador${Math.floor(Math.random() * 1000)}`;
         setUserName(defaultName);
         localStorage.setItem(`player-name:${clerkId}`, defaultName);
       }
 
-      // Salvar role no localStorage com ID do Clerk
+      if (savedAvatar) {
+        setUserAvatar(savedAvatar);
+      } else {
+        const avatars = [
+          "👤",
+          "⚽",
+          "🥅",
+          "👟",
+          "🦵",
+          "🧤",
+          "🎯",
+          "🚀",
+          "⭐",
+          "🏆",
+        ];
+        const randomAvatar =
+          avatars[Math.floor(Math.random() * avatars.length)];
+        setUserAvatar(randomAvatar);
+        localStorage.setItem(`player-avatar:${clerkId}`, randomAvatar);
+      }
+
+      // Salvar role
       localStorage.setItem(`user-role:${clerkId}`, "jogador");
+
+      // Registrar usuário
+      registerUser(clerkId, userName, userAvatar);
     } else {
-      // Fallback para usuário anônimo
-      const anonId = `user-${Math.random().toString(36).substr(2, 9)}`;
-      const anonName = `Jogador ${Math.floor(Math.random() * 100)}`;
+      // Usuário anônimo
+      const anonId = `anon-${Math.random().toString(36).substr(2, 9)}`;
+      const anonName = `Jogador${Math.floor(Math.random() * 1000)}`;
+      const avatars = [
+        "👤",
+        "⚽",
+        "🥅",
+        "👟",
+        "🦵",
+        "🧤",
+        "🎯",
+        "🚀",
+        "⭐",
+        "🏆",
+      ];
+      const anonAvatar = avatars[Math.floor(Math.random() * avatars.length)];
+
       setUserId(anonId);
       setUserName(anonName);
+      setUserAvatar(anonAvatar);
+
       localStorage.setItem(`user-role:${anonId}`, "jogador");
       localStorage.setItem(`player-name:${anonId}`, anonName);
+      localStorage.setItem(`player-avatar:${anonId}`, anonAvatar);
+
+      registerUser(anonId, anonName, anonAvatar);
     }
-  }, [user]);
 
-  // Função para voltar ao menu e escolher papel - CORRIGIDA
-  const goToMenu = () => {
-    if (confirm("Voltar ao menu para escolher outro papel?")) {
-      // Remover do localStorage com o ID correto
-      if (userId) {
-        localStorage.removeItem(`user-role:${userId}`);
-      }
-      // Forçar recarregamento da página
-      window.location.href = "/";
-    }
-  };
-
-  // Salvar nome do jogador
-  const savePlayerName = () => {
-    if (tempName.trim()) {
-      setUserName(tempName);
-      if (userId) {
-        localStorage.setItem(`player-name:${userId}`, tempName);
-        // Atualizar no Firebase também
-        updatePlayerNameInFirebase(tempName);
-      }
-    }
-    setEditingName(false);
-    setTempName("");
-  };
-
-  // Atualizar nome no Firebase
-  const updatePlayerNameInFirebase = async (name: string) => {
-    if (!userId) return;
-
-    try {
-      const playerRef = ref(database, `players/${userId}/name`);
-      await set(playerRef, name);
-      console.log("✅ Nome atualizado no Firebase:", name);
-    } catch (error) {
-      console.error("❌ Erro ao atualizar nome:", error);
-    }
-  };
-
-  // Registrar presença inicial
-  useEffect(() => {
-    if (!userId || !userName) return;
-
-    const registerUser = async () => {
-      try {
-        await gameStorage.registerPlayer(userId, userName, false);
-        console.log("✅ Jogador registrado:", userId, userName);
-      } catch (error) {
-        console.error("❌ Erro ao registrar jogador:", error);
-      }
-    };
-
-    registerUser();
     setLoading(false);
-  }, [userId, userName]);
+  }, [isLoaded, user]);
+
+  // Registrar usuário no Firebase
+  const registerUser = async (id: string, name: string, avatar: string) => {
+    try {
+      await gameStorage.registerPlayer(id, name, false, avatar);
+      console.log("✅ Jogador registrado:", { id, name, avatar });
+    } catch (error) {
+      console.error("❌ Erro ao registrar jogador:", error);
+    }
+  };
 
   // Heartbeat - manter presença ativa
   useEffect(() => {
@@ -156,58 +165,80 @@ export default function JogadorPage() {
       } catch (error) {
         console.error("❌ Erro no heartbeat:", error);
       }
-    }, 2000);
+    }, 3000);
 
     return () => clearInterval(heartbeat);
   }, [userId]);
 
-  // Listener em tempo real para o estado do jogo - CORRIGIDO
+  // Listener em tempo real para o estado do jogo
   useEffect(() => {
     if (!userId) return;
 
-    console.log("🎮 Iniciando listener do jogo para usuário:", userId);
+    console.log("🎮 Configurando listener do jogo para:", userId);
 
     const unsubscribe = gameStorage.onGameStateChange((fullGame: GameState) => {
-      console.log("📡 Jogo atualizado no listener:", {
+      console.log("📡 Dados recebidos do Firebase:", {
+        hasData: !!fullGame,
         gameStarted: fullGame?.gameStarted,
-        hasGameState: !!fullGame,
-        lastUpdate: new Date().toLocaleTimeString(),
+        timestamp: new Date().toLocaleTimeString(),
+        userId: userId,
       });
 
       setLastUpdate(new Date());
 
-      // Se não houver dados do jogo ou partida não iniciada
-      if (!fullGame || fullGame.gameStarted !== true) {
-        console.log("⏸️ Partida não iniciada ou sem dados");
+      if (!fullGame) {
+        console.log("❌ Nenhum dado do jogo recebido");
         setGameState(null);
         return;
       }
 
-      console.log("✅ Partida iniciada! Filtrando jogadores visíveis...");
+      // DEBUG: Log completo se debugMode estiver ativo
+      if (debugMode) {
+        console.log("🔍 DEBUG - Estado completo:", fullGame);
+        console.log("🔍 gameStarted type:", typeof fullGame.gameStarted);
+        console.log("🔍 gameStarted value:", fullGame.gameStarted);
+      }
 
+      // Verificar se o jogo foi iniciado
+      if (fullGame.gameStarted !== true) {
+        console.log(
+          "⏸️ Partida não iniciada (gameStarted:",
+          fullGame.gameStarted,
+          ")",
+        );
+        setGameState(null);
+        return;
+      }
+
+      console.log("✅ Partida INICIADA! Processando...");
+
+      // Filtrar jogadores visíveis
       const filteredGame = {
         ...fullGame,
-        blueTeam:
-          fullGame.blueTeam?.filter((p) => p.visibleTo.includes(userId)) || [],
-        redTeam:
-          fullGame.redTeam?.filter((p) => p.visibleTo.includes(userId)) || [],
+        blueTeam: (fullGame.blueTeam || []).filter(
+          (p) => p.visibleTo && p.visibleTo.includes(userId),
+        ),
+        redTeam: (fullGame.redTeam || []).filter(
+          (p) => p.visibleTo && p.visibleTo.includes(userId),
+        ),
       };
 
-      console.log("👁️ Jogadores visíveis:", {
+      console.log("👁️ Jogadores visíveis após filtro:", {
         blue: filteredGame.blueTeam.length,
         red: filteredGame.redTeam.length,
-        userId: userId,
+        total: filteredGame.blueTeam.length + filteredGame.redTeam.length,
       });
 
       setGameState(filteredGame);
     });
 
     return () => {
+      console.log("🧹 Removendo listener do jogo");
       if (unsubscribe) unsubscribe();
     };
-  }, [userId, forceRefresh]);
+  }, [userId, forceRefresh, debugMode]);
 
-  // Listener em tempo real para jogadores conectados
+  // Listener para jogadores conectados
   useEffect(() => {
     const unsubscribe = gameStorage.onPlayersChange((players) => {
       setRealPlayers(players);
@@ -218,6 +249,38 @@ export default function JogadorPage() {
     };
   }, []);
 
+  // Função para voltar ao menu
+  const goToMenu = () => {
+    if (confirm("Voltar ao menu para escolher outro papel?")) {
+      if (userId) {
+        localStorage.removeItem(`user-role:${userId}`);
+      }
+      window.location.href = "/";
+    }
+  };
+
+  // Atualizar nome do jogador
+  const savePlayerName = async () => {
+    if (!tempName.trim() || !userId) return;
+
+    const newName = tempName.trim();
+    setUserName(newName);
+    localStorage.setItem(`player-name:${userId}`, newName);
+
+    try {
+      // Atualizar no Firebase
+      const playerRef = ref(database, `players/${userId}/name`);
+      await set(playerRef, newName);
+      console.log("✅ Nome atualizado no Firebase:", newName);
+    } catch (error) {
+      console.error("❌ Erro ao atualizar nome:", error);
+    }
+
+    setEditingName(false);
+    setTempName("");
+  };
+
+  // Ativar/desativar participação
   const toggleActive = async () => {
     if (!userId) return;
 
@@ -234,14 +297,17 @@ export default function JogadorPage() {
     }
   };
 
-  // Função para forçar atualização manual - MELHORADA
+  // Forçar atualização manual
   const handleForceRefresh = async () => {
     console.log("🔄 Forçando atualização manual...");
     setForceRefresh((prev) => prev + 1);
 
     try {
-      // Recarrega os dados do Firebase manualmente
       const fullGame = await gameStorage.loadGameState();
+      console.log("📦 Dados carregados manualmente:", {
+        hasData: !!fullGame,
+        gameStarted: fullGame?.gameStarted,
+      });
 
       if (!fullGame || fullGame.gameStarted !== true) {
         console.log("⚠️ Partida não iniciada após atualização manual");
@@ -251,19 +317,26 @@ export default function JogadorPage() {
 
       const filteredGame = {
         ...fullGame,
-        blueTeam: fullGame.blueTeam.filter((p) => p.visibleTo.includes(userId)),
-        redTeam: fullGame.redTeam.filter((p) => p.visibleTo.includes(userId)),
+        blueTeam: (fullGame.blueTeam || []).filter(
+          (p) => p.visibleTo && p.visibleTo.includes(userId),
+        ),
+        redTeam: (fullGame.redTeam || []).filter(
+          (p) => p.visibleTo && p.visibleTo.includes(userId),
+        ),
       };
 
       setGameState(filteredGame);
       setLastUpdate(new Date());
-      console.log("✅ Dados atualizados manualmente!", {
-        blue: filteredGame.blueTeam.length,
-        red: filteredGame.redTeam.length,
-      });
+      console.log("✅ Dados atualizados manualmente!");
     } catch (error) {
       console.error("❌ Erro ao atualizar manualmente:", error);
     }
+  };
+
+  // Debug function
+  const toggleDebug = () => {
+    setDebugMode(!debugMode);
+    console.log(`🐛 Debug mode ${!debugMode ? "ativado" : "desativado"}`);
   };
 
   const getPlayerById = (id?: string) => realPlayers.find((p) => p.id === id);
@@ -276,6 +349,7 @@ export default function JogadorPage() {
     );
   }
 
+  // Se não houver gameState (partida não iniciada ou sem dados visíveis)
   if (!gameState) {
     return (
       <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4">
@@ -322,20 +396,26 @@ export default function JogadorPage() {
           )}
 
           <div className="text-xs text-gray-600 mb-6">
-            User ID: {userId.substring(0, 12)}...
+            ID: {userId.substring(0, 15)}...
+            <button
+              onClick={toggleDebug}
+              className="ml-2 text-blue-400 hover:text-blue-300"
+            >
+              {debugMode ? "🐛 Debug ON" : "🐛 Debug OFF"}
+            </button>
           </div>
         </div>
 
         <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
           {/* Editar nome do jogador */}
-          <div className="mb-4">
+          <div className="mb-4 p-3 bg-gray-700 rounded-lg">
             {editingName ? (
               <div className="space-y-2">
                 <input
                   type="text"
                   value={tempName}
                   onChange={(e) => setTempName(e.target.value)}
-                  className="w-full bg-gray-700 text-white p-2 rounded"
+                  className="w-full bg-gray-600 text-white p-2 rounded"
                   placeholder="Seu nome"
                   autoFocus
                 />
@@ -361,9 +441,12 @@ export default function JogadorPage() {
               </div>
             ) : (
               <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-white font-semibold">Seu nome:</div>
-                  <div className="text-gray-300">{userName}</div>
+                <div className="flex items-center gap-3">
+                  <div className="text-2xl">{userAvatar}</div>
+                  <div>
+                    <div className="text-white font-semibold">{userName}</div>
+                    <div className="text-gray-400 text-xs">Seu personagem</div>
+                  </div>
                 </div>
                 <button
                   onClick={() => {
@@ -400,7 +483,17 @@ export default function JogadorPage() {
                   : "bg-green-600 hover:bg-green-700 text-white"
               }`}
             >
-              {isActive ? "🚪 Sair da Partida" : "✅ Entrar na Partida"}
+              {isActive ? (
+                <>
+                  <EyeOff className="w-5 h-5" />
+                  Sair da Partida
+                </>
+              ) : (
+                <>
+                  <Eye className="w-5 h-5" />
+                  Entrar na Partida
+                </>
+              )}
             </button>
 
             <button
@@ -426,12 +519,10 @@ export default function JogadorPage() {
               <div className="text-gray-300 text-xs">
                 <p className="font-semibold">Dica:</p>
                 <p>
-                  Clique em "Atualizar Agora" quando o mestre fizer alguma
-                  alteração.
+                  O mestre precisa: 1) Iniciar a partida, 2) Tornar jogadores
+                  visíveis para você
                 </p>
-                <p>
-                  Use "Trocar de Papel" para virar mestre ou criar novo jogador.
-                </p>
+                <p>Use "Atualizar Agora" quando o mestre fizer alterações.</p>
               </div>
             </div>
           </div>
@@ -458,7 +549,10 @@ export default function JogadorPage() {
             <div className="text-3xl md:text-4xl">⚽</div>
             <div className="flex-1">
               <h1 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-2">
-                👁️ Visualização
+                👁️ Visualização do Jogo
+                {debugMode && (
+                  <span className="text-red-400 text-sm">🐛 DEBUG</span>
+                )}
               </h1>
               <div className="flex items-center gap-2">
                 {editingName ? (
@@ -488,18 +582,21 @@ export default function JogadorPage() {
                   </div>
                 ) : (
                   <>
-                    <p className="text-gray-400 text-sm md:text-base">
-                      Bem-vindo, {userName}!
-                    </p>
-                    <button
-                      onClick={() => {
-                        setTempName(userName);
-                        setEditingName(true);
-                      }}
-                      className="text-blue-400 hover:text-blue-300"
-                    >
-                      <Edit2 className="w-3 h-3" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">{userAvatar}</span>
+                      <p className="text-gray-400 text-sm md:text-base">
+                        {userName}
+                      </p>
+                      <button
+                        onClick={() => {
+                          setTempName(userName);
+                          setEditingName(true);
+                        }}
+                        className="text-blue-400 hover:text-blue-300"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                      </button>
+                    </div>
                   </>
                 )}
               </div>
@@ -522,6 +619,13 @@ export default function JogadorPage() {
               <Home className="w-4 h-4" />
               <span className="hidden sm:inline">Trocar Papel</span>
             </button>
+
+            <button
+              onClick={toggleDebug}
+              className={`px-3 py-2 rounded-lg flex items-center gap-2 ${debugMode ? "bg-red-600 hover:bg-red-700" : "bg-gray-600 hover:bg-gray-500"} text-white`}
+            >
+              🐛
+            </button>
           </div>
         </div>
 
@@ -534,7 +638,7 @@ export default function JogadorPage() {
                   className={`w-3 h-3 rounded-full ${isActive ? "bg-green-400 animate-pulse" : "bg-gray-500"}`}
                 />
                 <span className="text-white text-sm">
-                  {isActive ? "Participante Ativo" : "Espectador"}
+                  {isActive ? "✅ Participante Ativo" : "👁️ Espectador"}
                 </span>
               </div>
             </div>
@@ -547,43 +651,12 @@ export default function JogadorPage() {
           </div>
         </div>
 
-        {/* Controle de participação */}
-        <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div>
-                <div className="text-white font-bold">
-                  {isActive ? "🎮 Participante Ativo" : "👁️ Espectador"}
-                </div>
-                <div className="text-gray-400 text-sm">
-                  {isActive
-                    ? "O mestre pode te colocar em jogo"
-                    : "Você está apenas assistindo"}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                onClick={toggleActive}
-                className={`px-6 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all whitespace-nowrap ${
-                  isActive
-                    ? "bg-red-600 hover:bg-red-700 text-white"
-                    : "bg-green-600 hover:bg-green-700 text-white"
-                }`}
-              >
-                {isActive ? "🚪 Sair da Partida" : "✅ Entrar na Partida"}
-              </button>
-            </div>
-          </div>
-        </div>
-
         {/* Placar e Tempo */}
         <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-gray-700 rounded-lg p-4 md:p-6">
               <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-                👥 Placar
+                <Users className="w-5 h-5" /> Placar
               </h3>
               <div className="flex justify-between items-center">
                 <div className="text-center flex-1">
@@ -630,8 +703,9 @@ export default function JogadorPage() {
               <span className="text-2xl">👁️</span>
               <div>
                 <div className="text-white font-semibold">
-                  Você está vendo {totalVisiblePlayers} jogador
-                  {totalVisiblePlayers !== 1 ? "es" : ""}
+                  {totalVisiblePlayers === 0
+                    ? "Nenhum jogador visível para você"
+                    : `Você está vendo ${totalVisiblePlayers} jogador${totalVisiblePlayers !== 1 ? "es" : ""}`}
                 </div>
                 <div className="text-gray-400 text-sm">
                   {gameState.blueTeam.length} do {gameState.blueTeamName} •{" "}
@@ -650,7 +724,7 @@ export default function JogadorPage() {
           </div>
         </div>
 
-        {/* Campo de Jogo - COM PREVENÇÃO DE ARRASTAR IMAGEM */}
+        {/* Campo de Jogo */}
         <div className="bg-gray-800 rounded-lg p-4 md:p-6">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-white font-bold">Campo de Jogo</h3>
@@ -688,15 +762,21 @@ export default function JogadorPage() {
 
               {totalVisiblePlayers === 0 && (
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="bg-gray-900 bg-opacity-90 rounded-lg p-6 text-center">
+                  <div className="bg-gray-900 bg-opacity-90 rounded-lg p-6 text-center max-w-md mx-4">
                     <div className="text-6xl mb-3">👁️</div>
                     <div className="text-white font-bold mb-2">
                       Nenhum jogador visível
                     </div>
-                    <div className="text-gray-400 text-sm">
+                    <div className="text-gray-400 text-sm mb-3">
                       O mestre ainda não liberou nenhum jogador para você
-                      visualizar
+                      visualizar. Peça ao mestre para:
                     </div>
+                    <ol className="text-gray-300 text-sm text-left list-decimal pl-5 mb-4">
+                      <li>Clique em "Visível para Todos" no painel</li>
+                      <li>
+                        Ou configure a visibilidade manualmente nos jogadores
+                      </li>
+                    </ol>
                     <button
                       onClick={handleForceRefresh}
                       className="mt-3 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center gap-2 mx-auto"
@@ -715,14 +795,12 @@ export default function JogadorPage() {
                     key={player.id}
                     style={{ left: `${player.x}%`, top: `${player.y}%` }}
                     className="absolute w-8 h-8 md:w-10 md:h-10 bg-blue-500 border-2 border-white rounded-full flex flex-col items-center justify-center text-white font-bold text-xs transform -translate-x-1/2 -translate-y-1/2 shadow-lg transition-all group overflow-hidden"
-                    // Prevenir arrastar imagem
-                    onDragStart={(e) => e.preventDefault()}
                   >
                     {player.customImage ? (
                       <img
                         src={player.customImage}
                         alt=""
-                        className="w-full h-full object-cover pointer-events-none" // Adicionado pointer-events-none
+                        className="w-full h-full object-cover pointer-events-none"
                         draggable="false"
                         onDragStart={(e) => e.preventDefault()}
                       />
@@ -749,14 +827,12 @@ export default function JogadorPage() {
                     key={player.id}
                     style={{ left: `${player.x}%`, top: `${player.y}%` }}
                     className="absolute w-8 h-8 md:w-10 md:h-10 bg-red-500 border-2 border-white rounded-full flex flex-col items-center justify-center text-white font-bold text-xs transform -translate-x-1/2 -translate-y-1/2 shadow-lg transition-all group overflow-hidden"
-                    // Prevenir arrastar imagem
-                    onDragStart={(e) => e.preventDefault()}
                   >
                     {player.customImage ? (
                       <img
                         src={player.customImage}
                         alt=""
-                        className="w-full h-full object-cover pointer-events-none" // Adicionado pointer-events-none
+                        className="w-full h-full object-cover pointer-events-none"
                         draggable="false"
                         onDragStart={(e) => e.preventDefault()}
                       />
@@ -816,14 +892,13 @@ export default function JogadorPage() {
           <div className="flex items-start gap-2">
             <AlertCircle className="w-4 h-4 text-yellow-300 mt-0.5 flex-shrink-0" />
             <div className="text-yellow-200 text-xs">
-              <p className="font-semibold">Nota:</p>
+              <p className="font-semibold">Como ver o campo:</p>
+              <p>1. Mestre deve iniciar a partida</p>
+              <p>2. Mestre deve tornar jogadores visíveis para você</p>
+              <p>3. Clique em "Atualizar" para sincronizar</p>
               <p>
-                Se o mestre fez uma alteração e você não está vendo, clique no
-                botão "Atualizar" para forçar a sincronização.
-              </p>
-              <p>
-                Para trocar de papel (virar mestre ou criar novo jogador), use o
-                botão "Trocar Papel".
+                4. Se ainda não ver, peça ao mestre para clicar em "Visível para
+                Todos"
               </p>
             </div>
           </div>

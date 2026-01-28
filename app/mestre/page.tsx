@@ -21,7 +21,7 @@ import {
   RefreshCw,
   Upload,
   Image as ImageIcon,
-  User,
+  EyeIcon,
 } from "lucide-react";
 
 interface Player {
@@ -183,11 +183,13 @@ export default function MestrePage() {
     try {
       const savedGame = await gameStorage.loadGameState();
       if (savedGame) {
-        setGameState(savedGame);
         console.log("✅ Jogo carregado do Firebase:", savedGame);
+        setGameState(savedGame);
+      } else {
+        console.log("ℹ️ Nenhum jogo salvo, usando estado inicial");
       }
     } catch (error) {
-      console.log("Nenhum jogo salvo ainda:", error);
+      console.log("❌ Erro ao carregar jogo:", error);
     }
   };
 
@@ -195,6 +197,7 @@ export default function MestrePage() {
     try {
       console.log("💾 Salvando jogo no Firebase:", {
         gameStarted: state.gameStarted,
+        typeofGameStarted: typeof state.gameStarted,
         blueTeam: state.blueTeam.length,
         redTeam: state.redTeam.length,
       });
@@ -206,7 +209,7 @@ export default function MestrePage() {
   };
 
   useEffect(() => {
-    if (!loading) {
+    if (!loading && gameState) {
       saveGame(gameState);
     }
   }, [gameState, loading]);
@@ -214,15 +217,15 @@ export default function MestrePage() {
   // Listener em tempo real para jogadores conectados
   useEffect(() => {
     const unsubscribe = gameStorage.onPlayersChange((players) => {
+      console.log("👥 Jogadores atualizados:", players.length);
       const now = Date.now();
       const activePlayers = players.filter((p) => {
-        const isRecent = now - p.lastSeen < 10000;
+        const isRecent = now - p.lastSeen < 30000; // 30 segundos
         return isRecent;
       });
       setRealPlayers(activePlayers);
     });
 
-    // Cleanup quando desmontar
     return () => {
       if (unsubscribe) unsubscribe();
     };
@@ -232,7 +235,7 @@ export default function MestrePage() {
   useEffect(() => {
     const interval = setInterval(() => {
       gameStorage.cleanInactivePlayers();
-    }, 5000);
+    }, 10000);
 
     return () => clearInterval(interval);
   }, []);
@@ -354,7 +357,10 @@ export default function MestrePage() {
   const startGame = () => {
     console.log("🎮 Iniciando partida...");
     setGameState((prev) => {
-      const newState = { ...prev, gameStarted: true };
+      const newState = {
+        ...prev,
+        gameStarted: true,
+      };
       console.log("✅ gameStarted agora é:", newState.gameStarted);
       return newState;
     });
@@ -771,10 +777,89 @@ export default function MestrePage() {
             {/* Banco de Jogadores - COM EDIÇÃO DE NOMES */}
             {activeRealPlayers.length > 0 ? (
               <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
-                <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-                  <Users className="w-5 h-5" /> Jogadores Ativos (
-                  {activeRealPlayers.length})
-                </h3>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-white font-bold flex items-center gap-2">
+                    <Users className="w-5 h-5" /> Jogadores Ativos (
+                    {activeRealPlayers.length})
+                  </h3>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        // Função para tornar todos os jogadores visíveis para TODOS
+                        const allPlayerIds = activeRealPlayers.map((p) => p.id);
+
+                        setGameState((prev) => ({
+                          ...prev,
+                          blueTeam: prev.blueTeam.map((player) => ({
+                            ...player,
+                            visibleTo: [
+                              ...new Set([
+                                ...player.visibleTo,
+                                ...allPlayerIds,
+                              ]),
+                            ],
+                          })),
+                          redTeam: prev.redTeam.map((player) => ({
+                            ...player,
+                            visibleTo: [
+                              ...new Set([
+                                ...player.visibleTo,
+                                ...allPlayerIds,
+                              ]),
+                            ],
+                          })),
+                        }));
+                        alert(
+                          "Todos os jogadores agora são visíveis para todos!",
+                        );
+                      }}
+                      className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
+                    >
+                      <EyeIcon className="w-4 h-4" />
+                      <span className="hidden sm:inline">
+                        Visível para Todos
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        // Função para tornar um jogador específico visível para todos os jogadores
+                        if (activeRealPlayers.length > 0) {
+                          const firstPlayerId = activeRealPlayers[0].id;
+                          setGameState((prev) => ({
+                            ...prev,
+                            blueTeam: prev.blueTeam.map((player) => ({
+                              ...player,
+                              visibleTo: [
+                                ...new Set([
+                                  ...player.visibleTo,
+                                  firstPlayerId,
+                                ]),
+                              ],
+                            })),
+                            redTeam: prev.redTeam.map((player) => ({
+                              ...player,
+                              visibleTo: [
+                                ...new Set([
+                                  ...player.visibleTo,
+                                  firstPlayerId,
+                                ]),
+                              ],
+                            })),
+                          }));
+                          alert(
+                            `Jogador ${activeRealPlayers[0].name} agora pode ver todos!`,
+                          );
+                        }
+                      }}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-sm flex items-center gap-1"
+                    >
+                      <Eye className="w-4 h-4" />
+                      <span className="hidden sm:inline">
+                        Mostrar Tudo para 1º Jogador
+                      </span>
+                    </button>
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                   {activeRealPlayers.map((player) => (
                     <div

@@ -117,7 +117,18 @@ export const gameStorage = {
   // Salvar estado do jogo
   async saveGameState(gameState: any) {
     try {
-      await set(ref(database, "current-game"), gameState);
+      // Garantir que gameStarted seja boolean
+      const stateToSave = {
+        ...gameState,
+        gameStarted: Boolean(gameState.gameStarted),
+      };
+
+      console.log("💾 Salvando estado do jogo:", {
+        gameStarted: stateToSave.gameStarted,
+        type: typeof stateToSave.gameStarted,
+      });
+
+      await set(ref(database, "current-game"), stateToSave);
       console.log("✅ Jogo salvo no Firebase");
     } catch (error) {
       console.error("❌ Erro ao salvar jogo:", error);
@@ -130,8 +141,14 @@ export const gameStorage = {
     try {
       const snapshot = await get(ref(database, "current-game"));
       if (snapshot.exists()) {
-        return snapshot.val();
+        const data = snapshot.val();
+        console.log("📥 Jogo carregado do Firebase:", {
+          gameStarted: data.gameStarted,
+          type: typeof data.gameStarted,
+        });
+        return data;
       }
+      console.log("📭 Nenhum jogo salvo no Firebase");
       return null;
     } catch (error) {
       console.error("❌ Erro ao carregar jogo:", error);
@@ -142,24 +159,49 @@ export const gameStorage = {
   // Listener em tempo real para o jogo
   onGameStateChange(callback: (gameState: any) => void) {
     const gameRef = ref(database, "current-game");
+
+    console.log("🔔 Configurando listener para current-game");
+
     onValue(gameRef, (snapshot) => {
+      console.log("📡 Firebase disparou onValue - current-game");
       if (snapshot.exists()) {
-        callback(snapshot.val());
+        const data = snapshot.val();
+        console.log("📦 Dados recebidos do Firebase:", {
+          hasData: true,
+          gameStarted: data.gameStarted,
+          type: typeof data.gameStarted,
+        });
+        callback(data);
+      } else {
+        console.log("📭 Nenhum dado no Firebase - current-game");
+        callback(null);
       }
     });
-    return () => off(gameRef);
+
+    return () => {
+      console.log("🧹 Removendo listener do Firebase - current-game");
+      off(gameRef);
+    };
   },
 
-  // Registrar presença do jogador
-  async registerPlayer(userId: string, userName: string, isActive: boolean) {
+  // Registrar presença do jogador (ATUALIZADA com avatar)
+  async registerPlayer(
+    userId: string,
+    userName: string,
+    isActive: boolean,
+    avatar?: string,
+  ) {
     try {
       const playerRef = ref(database, `players/${userId}`);
-      await set(playerRef, {
+      const playerData = {
         name: userName,
-        avatar: "👤",
+        avatar: avatar || "👤",
         isActive: isActive,
         lastSeen: serverTimestamp(),
-      });
+      };
+
+      await set(playerRef, playerData);
+      console.log("✅ Jogador registrado:", { userId, userName, avatar });
     } catch (error) {
       console.error("❌ Erro ao registrar jogador:", error);
       throw error;
@@ -176,22 +218,14 @@ export const gameStorage = {
     }
   },
 
-  async updatePlayerName(userId: string, name: string) {
-    try {
-      const playerRef = ref(database, `players/${userId}/name`);
-      await set(playerRef, name);
-      console.log(`✅ Nome atualizado para ${userId}: ${name}`);
-    } catch (error) {
-      console.error("❌ Erro ao atualizar nome:", error);
-      throw error;
-    }
-  },
-
   // Atualizar status ativo/inativo do jogador
   async updatePlayerActive(userId: string, isActive: boolean) {
     try {
       const playerRef = ref(database, `players/${userId}/isActive`);
       await set(playerRef, isActive);
+      console.log(
+        `✅ Status atualizado para ${userId}: ${isActive ? "Ativo" : "Inativo"}`,
+      );
     } catch (error) {
       console.error("❌ Erro ao atualizar status:", error);
       throw error;
@@ -201,19 +235,27 @@ export const gameStorage = {
   // Listener para jogadores conectados
   onPlayersChange(callback: (players: any[]) => void) {
     const playersRef = ref(database, "players");
+
+    console.log("🔔 Configurando listener para players");
+
     onValue(playersRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
         const players = Object.keys(data).map((id) => ({
           id,
           ...data[id],
+          lastSeen: data[id].lastSeen || Date.now(),
         }));
         callback(players);
       } else {
         callback([]);
       }
     });
-    return () => off(playersRef);
+
+    return () => {
+      console.log("🧹 Removendo listener do Firebase - players");
+      off(playersRef);
+    };
   },
 
   // Remover jogador
@@ -221,13 +263,14 @@ export const gameStorage = {
     try {
       const playerRef = ref(database, `players/${userId}`);
       await remove(playerRef);
+      console.log(`✅ Jogador removido: ${userId}`);
     } catch (error) {
       console.error("❌ Erro ao remover jogador:", error);
       throw error;
     }
   },
 
-  // Limpar jogadores inativos (mais de 10 segundos sem heartbeat)
+  // Limpar jogadores inativos (mais de 30 segundos sem heartbeat)
   async cleanInactivePlayers() {
     try {
       const snapshot = await get(ref(database, "players"));
@@ -236,13 +279,26 @@ export const gameStorage = {
         const now = Date.now();
 
         for (const [id, player] of Object.entries(players as any)) {
-          if (player.lastSeen && now - player.lastSeen > 10000) {
+          if (player.lastSeen && now - player.lastSeen > 30000) {
             await remove(ref(database, `players/${id}`));
+            console.log(`🧹 Jogador inativo removido: ${id}`);
           }
         }
       }
     } catch (error) {
       console.error("❌ Erro ao limpar jogadores:", error);
+    }
+  },
+
+  // Atualizar nome do jogador (nova função)
+  async updatePlayerName(userId: string, name: string) {
+    try {
+      const playerRef = ref(database, `players/${userId}/name`);
+      await set(playerRef, name);
+      console.log(`✅ Nome atualizado para ${userId}: ${name}`);
+    } catch (error) {
+      console.error("❌ Erro ao atualizar nome:", error);
+      throw error;
     }
   },
 };
