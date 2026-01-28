@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { storage } from "@/lib/firebase";
+import { gameStorage } from "@/lib/firebase";
 
 interface Player {
   id: string;
@@ -43,160 +43,96 @@ export default function JogadorPage() {
     () => `Jogador ${Math.floor(Math.random() * 100)}`,
   );
 
+  // Registrar presença inicial
   useEffect(() => {
-    registerPresence();
-    setLoading(false);
-  }, []);
-
-  const registerPresence = async () => {
-    try {
-      const existingInfo = await storage.get(`user-info:${userId}`);
-
-      const userInfo = {
-        name: userName,
-        avatar: "👤",
-        isActive: false,
-        lastSeen: Date.now(),
-      };
-
-      if (existingInfo && existingInfo.value) {
-        const info = JSON.parse(existingInfo.value);
-        userInfo.isActive = info.isActive !== false;
-        setIsActive(info.isActive !== false);
-      } else {
-        setIsActive(false);
-      }
-
-      await storage.set(`user-info:${userId}`, JSON.stringify(userInfo));
-    } catch (error) {
-      console.log("Erro ao registrar presença:", error);
-      setIsActive(false);
-    }
-  };
-
-  useEffect(() => {
-    const updatePresence = async () => {
+    const registerUser = async () => {
       try {
-        const existingInfo = await storage.get(`user-info:${userId}`);
-        if (existingInfo && existingInfo.value) {
-          const info = JSON.parse(existingInfo.value);
-          info.lastSeen = Date.now();
-          await storage.set(`user-info:${userId}`, JSON.stringify(info));
-        }
+        await gameStorage.registerPlayer(userId, userName, false);
+        console.log("✅ Jogador registrado:", userId);
       } catch (error) {
-        console.log("Erro ao atualizar presença:", error);
+        console.error("❌ Erro ao registrar jogador:", error);
       }
     };
 
-    const interval = setInterval(updatePresence, 2000);
-    return () => clearInterval(interval);
+    registerUser();
+    setLoading(false);
+  }, [userId, userName]);
+
+  // Heartbeat - manter presença ativa
+  useEffect(() => {
+    const heartbeat = setInterval(async () => {
+      try {
+        await gameStorage.updatePlayerPresence(userId);
+      } catch (error) {
+        console.error("❌ Erro no heartbeat:", error);
+      }
+    }, 2000);
+
+    return () => clearInterval(heartbeat);
   }, [userId]);
+
+  // Listener em tempo real para o estado do jogo
+  useEffect(() => {
+    console.log("🎮 Iniciando listener do jogo...");
+
+    const unsubscribe = gameStorage.onGameStateChange((fullGame: GameState) => {
+      console.log("📡 Jogo atualizado:", {
+        gameStarted: fullGame.gameStarted,
+        blueTeam: fullGame.blueTeam?.length,
+        redTeam: fullGame.redTeam?.length,
+      });
+
+      if (fullGame.gameStarted !== true) {
+        console.log("⏸️ Partida não iniciada");
+        setGameState(null);
+        return;
+      }
+
+      console.log("✅ Partida iniciada! Filtrando jogadores visíveis...");
+
+      const filteredGame = {
+        ...fullGame,
+        blueTeam: fullGame.blueTeam.filter((p) => p.visibleTo.includes(userId)),
+        redTeam: fullGame.redTeam.filter((p) => p.visibleTo.includes(userId)),
+      };
+
+      console.log("👁️ Jogadores visíveis:", {
+        blue: filteredGame.blueTeam.length,
+        red: filteredGame.redTeam.length,
+      });
+
+      setGameState(filteredGame);
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [userId]);
+
+  // Listener em tempo real para jogadores conectados
+  useEffect(() => {
+    const unsubscribe = gameStorage.onPlayersChange((players) => {
+      setRealPlayers(players);
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
 
   const toggleActive = async () => {
     const newActiveState = !isActive;
     setIsActive(newActiveState);
 
-    const userInfo = {
-      name: userName,
-      avatar: "👤",
-      isActive: newActiveState,
-      lastSeen: Date.now(),
-    };
-
     try {
-      await storage.set(`user-info:${userId}`, JSON.stringify(userInfo));
+      await gameStorage.updatePlayerActive(userId, newActiveState);
+      console.log(
+        `✅ Status atualizado: ${newActiveState ? "Ativo" : "Inativo"}`,
+      );
     } catch (error) {
-      console.error("Erro ao atualizar status:", error);
+      console.error("❌ Erro ao atualizar status:", error);
     }
   };
-
-  const refreshGame = () => {
-    loadPlayers();
-    loadGame();
-  };
-
-  const loadPlayers = async () => {
-    try {
-      const result = await storage.list("user-info:");
-      if (result && result.keys) {
-        const players: RealPlayer[] = [];
-
-        for (const key of result.keys) {
-          try {
-            const userInfo = await storage.get(key);
-            if (userInfo && userInfo.value) {
-              const info = JSON.parse(userInfo.value);
-              players.push({
-                id: key.replace("user-info:", ""),
-                name: info.name,
-                avatar: info.avatar || "👤",
-              });
-            }
-          } catch (error) {
-            console.log("Erro ao carregar jogador:", error);
-          }
-        }
-
-        setRealPlayers(players);
-      }
-    } catch (error) {
-      console.log("Erro ao listar jogadores:", error);
-    }
-  };
-
-  const loadGame = async () => {
-    try {
-      const result = await storage.get("current-game");
-      if (result && result.value) {
-        const fullGame: GameState = JSON.parse(result.value);
-
-        console.log("🎮 Jogo carregado:", {
-          gameStarted: fullGame.gameStarted,
-          blueTeam: fullGame.blueTeam.length,
-          redTeam: fullGame.redTeam.length,
-        });
-
-        if (fullGame.gameStarted !== true) {
-          console.log("⏸️ Partida ainda não iniciada");
-          setGameState(null);
-          return;
-        }
-
-        console.log("✅ Partida iniciada! Filtrando jogadores visíveis...");
-
-        const filteredGame = {
-          ...fullGame,
-          blueTeam: fullGame.blueTeam.filter((p) =>
-            p.visibleTo.includes(userId),
-          ),
-          redTeam: fullGame.redTeam.filter((p) => p.visibleTo.includes(userId)),
-        };
-
-        console.log("👁️ Jogadores visíveis:", {
-          blue: filteredGame.blueTeam.length,
-          red: filteredGame.redTeam.length,
-        });
-
-        setGameState(filteredGame);
-      } else {
-        console.log("❌ Nenhum jogo encontrado no storage");
-        setGameState(null);
-      }
-    } catch (error) {
-      console.log("❌ Erro ao carregar jogo:", error);
-      setGameState(null);
-    }
-  };
-
-  useEffect(() => {
-    loadPlayers();
-  }, []);
-
-  useEffect(() => {
-    loadGame();
-    const interval = setInterval(loadGame, 1000);
-    return () => clearInterval(interval);
-  }, [userId]);
 
   const getPlayerById = (id?: string) => realPlayers.find((p) => p.id === id);
 
@@ -240,23 +176,11 @@ export default function JogadorPage() {
               />
             </svg>
             <span className="text-green-400 text-sm">
-              Verificando a cada 1 segundo...
+              Sincronizando em tempo real...
             </span>
           </div>
           <div className="text-xs text-gray-600 mb-4">
             User ID: {userId.substring(0, 12)}...
-          </div>
-          <button
-            onClick={() => {
-              loadGame();
-              console.log("🔄 Atualização manual solicitada");
-            }}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg mb-2"
-          >
-            🔄 Forçar Atualização
-          </button>
-          <div className="text-xs text-gray-500">
-            Abra o console (F12) para ver logs de debug
           </div>
         </div>
 
@@ -333,13 +257,6 @@ export default function JogadorPage() {
             </div>
 
             <div className="flex gap-2">
-              <button
-                onClick={refreshGame}
-                className="px-4 py-3 rounded-lg font-bold flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white transition-all"
-              >
-                🔄 <span className="hidden sm:inline">Atualizar</span>
-              </button>
-
               <button
                 onClick={toggleActive}
                 className={`px-6 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all whitespace-nowrap ${

@@ -3,7 +3,7 @@
 import { useUser, UserButton } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { storage } from "@/lib/firebase";
+import { gameStorage } from "@/lib/firebase";
 import {
   RotateCcw,
   Users,
@@ -36,6 +36,7 @@ interface RealPlayer {
   name: string;
   avatar: string;
   isActive: boolean;
+  lastSeen: number;
 }
 
 const FORMATIONS = {
@@ -121,9 +122,6 @@ export default function MestrePage() {
   const [selectedTeamForFormation, setSelectedTeamForFormation] = useState<
     "blue" | "red" | null
   >(null);
-  const [uploadingImageFor, setUploadingImageFor] = useState<string | null>(
-    null,
-  );
 
   const [gameState, setGameState] = useState({
     blueTeamName: "Time Azul",
@@ -169,20 +167,15 @@ export default function MestrePage() {
     }
 
     loadGame();
-    loadConnectedPlayers();
     setLoading(false);
   }, [user, isLoaded, router]);
 
   const loadGame = async () => {
     try {
-      const result = await storage.get("current-game");
-      if (result && result.value) {
-        const parsed = JSON.parse(result.value);
-        if (parsed.gameStarted === undefined) {
-          parsed.gameStarted = false;
-        }
-        setGameState(parsed);
-        console.log("✅ Jogo carregado do Firebase:", parsed);
+      const savedGame = await gameStorage.loadGameState();
+      if (savedGame) {
+        setGameState(savedGame);
+        console.log("✅ Jogo carregado do Firebase:", savedGame);
       }
     } catch (error) {
       console.log("Nenhum jogo salvo ainda:", error);
@@ -196,8 +189,8 @@ export default function MestrePage() {
         blueTeam: state.blueTeam.length,
         redTeam: state.redTeam.length,
       });
-      await storage.set("current-game", JSON.stringify(state));
-      console.log("✅ Jogo salvo com sucesso no Firebase!");
+      await gameStorage.saveGameState(state);
+      console.log("✅ Jogo salvo com sucesso!");
     } catch (error) {
       console.error("❌ Erro ao salvar jogo:", error);
     }
@@ -209,44 +202,29 @@ export default function MestrePage() {
     }
   }, [gameState, loading]);
 
-  const loadConnectedPlayers = async () => {
-    try {
-      const result = await storage.list("user-info:");
-      if (result && result.keys) {
-        const players: RealPlayer[] = [];
-
-        for (const key of result.keys) {
-          try {
-            const userInfo = await storage.get(key);
-            if (userInfo && userInfo.value) {
-              const info = JSON.parse(userInfo.value);
-              const now = Date.now();
-              const lastSeen = info.lastSeen || 0;
-              const isOnline = now - lastSeen < 10000;
-
-              if (isOnline) {
-                players.push({
-                  id: key.replace("user-info:", ""),
-                  name: info.name,
-                  avatar: info.avatar || "👤",
-                  isActive: info.isActive !== false,
-                });
-              }
-            }
-          } catch (error) {
-            console.log("Erro ao carregar info do jogador:", error);
-          }
-        }
-
-        setRealPlayers(players);
-      }
-    } catch (error) {
-      console.log("Erro ao listar jogadores:", error);
-    }
-  };
-
+  // Listener em tempo real para jogadores conectados
   useEffect(() => {
-    const interval = setInterval(loadConnectedPlayers, 3000);
+    const unsubscribe = gameStorage.onPlayersChange((players) => {
+      const now = Date.now();
+      const activePlayers = players.filter((p) => {
+        const isRecent = now - p.lastSeen < 10000;
+        return isRecent;
+      });
+      setRealPlayers(activePlayers);
+    });
+
+    // Cleanup quando desmontar
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  // Limpar jogadores inativos periodicamente
+  useEffect(() => {
+    const interval = setInterval(() => {
+      gameStorage.cleanInactivePlayers();
+    }, 5000);
+
     return () => clearInterval(interval);
   }, []);
 
@@ -410,12 +388,10 @@ export default function MestrePage() {
     }));
 
     try {
-      await storage.delete(`user-info:${playerId}`);
+      await gameStorage.removePlayer(playerId);
     } catch (error) {
       console.log("Erro ao remover jogador:", error);
     }
-
-    loadConnectedPlayers();
   };
 
   const saveTime = () => {
@@ -446,8 +422,6 @@ export default function MestrePage() {
           ),
         }));
       }
-
-      setUploadingImageFor(null);
     };
 
     reader.readAsDataURL(file);
@@ -522,12 +496,9 @@ export default function MestrePage() {
               <h2 className="text-3xl font-bold text-white mb-4">
                 Partida não iniciada
               </h2>
-              <p className="text-gray-400 mb-2">
+              <p className="text-gray-400 mb-6">
                 Clique no botão abaixo para iniciar a partida. Os jogadores
                 poderão ver o campo e você poderá gerenciar tudo.
-              </p>
-              <p className="text-xs text-gray-500 mb-6">
-                Status: gameStarted = {String(gameState.gameStarted)}
               </p>
 
               <div className="bg-gray-700 rounded-lg p-4 mb-6">
@@ -588,7 +559,7 @@ export default function MestrePage() {
           </div>
         )}
 
-        {/* Só mostra os controles se a partida estiver iniciada */}
+        {/* Controles - só mostra se a partida estiver iniciada */}
         {gameState.gameStarted && (
           <>
             {/* Controles */}
@@ -747,13 +718,6 @@ export default function MestrePage() {
                   >
                     <Grid3x3 className="w-4 h-4" />
                     Formações
-                  </button>
-                  <button
-                    onClick={loadConnectedPlayers}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center justify-center gap-2 mb-2"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    Atualizar Jogadores
                   </button>
                   <button
                     onClick={resetGame}

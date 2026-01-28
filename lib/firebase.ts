@@ -6,10 +6,10 @@ import {
   set,
   get,
   remove,
-  query,
-  orderByKey,
-  startAt,
-  endAt,
+  onValue,
+  off,
+  serverTimestamp,
+  DatabaseReference,
 } from "firebase/database";
 
 const firebaseConfig = {
@@ -27,7 +27,7 @@ const app =
   getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 const database = getDatabase(app);
 
-// Funções auxiliares para simular a API do window.storage
+// Storage API compatível com o código existente
 export const storage = {
   async get(key: string) {
     try {
@@ -108,6 +108,130 @@ export const storage = {
     } catch (error) {
       console.error("Erro ao listar do Firebase:", error);
       throw error;
+    }
+  },
+};
+
+// Funções específicas para o jogo
+export const gameStorage = {
+  // Salvar estado do jogo
+  async saveGameState(gameState: any) {
+    try {
+      await set(ref(database, "current-game"), gameState);
+      console.log("✅ Jogo salvo no Firebase");
+    } catch (error) {
+      console.error("❌ Erro ao salvar jogo:", error);
+      throw error;
+    }
+  },
+
+  // Carregar estado do jogo
+  async loadGameState() {
+    try {
+      const snapshot = await get(ref(database, "current-game"));
+      if (snapshot.exists()) {
+        return snapshot.val();
+      }
+      return null;
+    } catch (error) {
+      console.error("❌ Erro ao carregar jogo:", error);
+      throw error;
+    }
+  },
+
+  // Listener em tempo real para o jogo
+  onGameStateChange(callback: (gameState: any) => void) {
+    const gameRef = ref(database, "current-game");
+    onValue(gameRef, (snapshot) => {
+      if (snapshot.exists()) {
+        callback(snapshot.val());
+      }
+    });
+    return () => off(gameRef);
+  },
+
+  // Registrar presença do jogador
+  async registerPlayer(userId: string, userName: string, isActive: boolean) {
+    try {
+      const playerRef = ref(database, `players/${userId}`);
+      await set(playerRef, {
+        name: userName,
+        avatar: "👤",
+        isActive: isActive,
+        lastSeen: serverTimestamp(),
+      });
+    } catch (error) {
+      console.error("❌ Erro ao registrar jogador:", error);
+      throw error;
+    }
+  },
+
+  // Atualizar presença do jogador
+  async updatePlayerPresence(userId: string) {
+    try {
+      const playerRef = ref(database, `players/${userId}/lastSeen`);
+      await set(playerRef, serverTimestamp());
+    } catch (error) {
+      console.error("❌ Erro ao atualizar presença:", error);
+    }
+  },
+
+  // Atualizar status ativo/inativo do jogador
+  async updatePlayerActive(userId: string, isActive: boolean) {
+    try {
+      const playerRef = ref(database, `players/${userId}/isActive`);
+      await set(playerRef, isActive);
+    } catch (error) {
+      console.error("❌ Erro ao atualizar status:", error);
+      throw error;
+    }
+  },
+
+  // Listener para jogadores conectados
+  onPlayersChange(callback: (players: any[]) => void) {
+    const playersRef = ref(database, "players");
+    onValue(playersRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        const players = Object.keys(data).map((id) => ({
+          id,
+          ...data[id],
+        }));
+        callback(players);
+      } else {
+        callback([]);
+      }
+    });
+    return () => off(playersRef);
+  },
+
+  // Remover jogador
+  async removePlayer(userId: string) {
+    try {
+      const playerRef = ref(database, `players/${userId}`);
+      await remove(playerRef);
+    } catch (error) {
+      console.error("❌ Erro ao remover jogador:", error);
+      throw error;
+    }
+  },
+
+  // Limpar jogadores inativos (mais de 10 segundos sem heartbeat)
+  async cleanInactivePlayers() {
+    try {
+      const snapshot = await get(ref(database, "players"));
+      if (snapshot.exists()) {
+        const players = snapshot.val();
+        const now = Date.now();
+
+        for (const [id, player] of Object.entries(players as any)) {
+          if (player.lastSeen && now - player.lastSeen > 10000) {
+            await remove(ref(database, `players/${id}`));
+          }
+        }
+      }
+    } catch (error) {
+      console.error("❌ Erro ao limpar jogadores:", error);
     }
   },
 };
