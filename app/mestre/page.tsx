@@ -464,6 +464,13 @@ export default function MestrePage() {
     <div className="min-h-screen bg-gray-900 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
+        <button
+          onClick={loadGame}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg flex items-center gap-2"
+        >
+          <RefreshCw className="w-4 h-4" />
+          <span className="hidden sm:inline">Recarregar</span>
+        </button>
         <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6 flex justify-between items-center">
           <div className="flex items-center gap-4">
             <div className="text-3xl md:text-4xl">⚽</div>

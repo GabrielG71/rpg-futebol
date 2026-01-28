@@ -3,7 +3,7 @@
 import { useUser, SignInButton, UserButton } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { Users, Trophy } from "lucide-react";
+import { Users, Trophy, RefreshCw, LogOut } from "lucide-react";
 
 export default function Home() {
   const { isSignedIn, user, isLoaded } = useUser();
@@ -40,6 +40,16 @@ export default function Home() {
     router.push(`/${role}`);
   };
 
+  // Nova função para trocar papel
+  const switchRole = () => {
+    if (!user) return;
+
+    const roleKey = `user-role:${user.id}`;
+    localStorage.removeItem(roleKey);
+    setUserRole(null);
+    window.location.href = "/";
+  };
+
   if (!isLoaded || loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 via-green-700 to-emerald-900 flex items-center justify-center">
@@ -73,8 +83,47 @@ export default function Home() {
 
   if (userRole) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-900 via-green-700 to-emerald-900 flex items-center justify-center">
-        <div className="text-white text-2xl">⚽ Redirecionando...</div>
+      <div className="min-h-screen bg-gradient-to-br from-green-900 via-green-700 to-emerald-900 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl shadow-2xl p-12 max-w-md w-full text-center">
+          <div className="text-8xl mb-6">⚽</div>
+          <h1 className="text-3xl font-bold text-gray-800 mb-4">
+            Papel atual:{" "}
+            <span className="text-green-600">
+              {userRole === "mestre" ? "Mestre" : "Jogador"}
+            </span>
+          </h1>
+          <p className="text-gray-600 mb-8">
+            Você já está como {userRole === "mestre" ? "mestre" : "jogador"}.
+          </p>
+
+          <div className="space-y-4">
+            <button
+              onClick={() => router.push(`/${userRole}`)}
+              className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white px-6 py-4 rounded-xl font-bold text-lg hover:from-green-700 hover:to-emerald-700 transition-all shadow-lg"
+            >
+              Continuar como {userRole === "mestre" ? "Mestre" : "Jogador"}
+            </button>
+
+            <button
+              onClick={switchRole}
+              className="w-full bg-gradient-to-r from-gray-600 to-gray-700 text-white px-6 py-4 rounded-xl font-bold text-lg hover:from-gray-700 hover:to-gray-800 transition-all shadow-lg flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="w-5 h-5" />
+              Trocar de Papel
+            </button>
+
+            <button
+              onClick={() => {
+                localStorage.removeItem(`user-role:${user.id}`);
+                window.location.href = "/";
+              }}
+              className="w-full bg-gradient-to-r from-red-600 to-red-700 text-white px-6 py-4 rounded-xl font-bold text-lg hover:from-red-700 hover:to-red-800 transition-all shadow-lg flex items-center justify-center gap-2"
+            >
+              <LogOut className="w-5 h-5" />
+              Sair e Escolher Novamente
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -116,6 +165,12 @@ export default function Home() {
               Visualize o campo e participe da partida
             </p>
           </button>
+        </div>
+
+        <div className="mt-8 text-center">
+          <p className="text-gray-500 text-sm">
+            Pode trocar de papel a qualquer momento
+          </p>
         </div>
       </div>
     </div>
