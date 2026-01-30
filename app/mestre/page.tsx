@@ -353,7 +353,7 @@ export default function MestrePage() {
           y: 20 + Math.floor(i / 4) * 20,
           number: i + 1,
           visibleTo: [] as string[],
-          customImage: undefined,
+          // REMOVA customImage completamente em vez de undefined
         })),
       redTeam: Array(11)
         .fill(null)
@@ -363,7 +363,7 @@ export default function MestrePage() {
           y: 20 + Math.floor(i / 4) * 20,
           number: i + 1,
           visibleTo: [] as string[],
-          customImage: undefined,
+          // REMOVA customImage completamente em vez de undefined
         })),
       ball: { x: 50, y: 50 },
       displayTime: "00:00",
@@ -374,6 +374,37 @@ export default function MestrePage() {
 
     setGameState(newState);
   };
+
+  // E no useState inicial:
+  const [gameState, setGameState] = useState({
+    blueTeamName: "Time Azul",
+    redTeamName: "Time Vermelho",
+    blueTeam: Array(11)
+      .fill(null)
+      .map((_, i) => ({
+        id: `blue-${i}`,
+        x: 15 + (i % 4) * 10,
+        y: 20 + Math.floor(i / 4) * 20,
+        number: i + 1,
+        visibleTo: [] as string[],
+        // SEM customImage aqui
+      })),
+    redTeam: Array(11)
+      .fill(null)
+      .map((_, i) => ({
+        id: `red-${i}`,
+        x: 65 + (i % 4) * 10,
+        y: 20 + Math.floor(i / 4) * 20,
+        number: i + 1,
+        visibleTo: [] as string[],
+        // SEM customImage aqui
+      })),
+    ball: { x: 50, y: 50 },
+    displayTime: "00:00",
+    score: { blue: 0, red: 0 },
+    fieldImage: undefined,
+    gameStarted: false,
+  });
 
   const startGame = () => {
     console.log("🎮 [MESTRE-START] ======= INICIANDO PARTIDA =======");

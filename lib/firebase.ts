@@ -114,7 +114,7 @@ export const storage = {
 
 // Funções específicas para o jogo
 export const gameStorage = {
-  // Salvar estado do jogo
+  // Salvar estado do jogo (ATUALIZADA)
   async saveGameState(gameState: any) {
     try {
       // DEBUG: Log completo do que está sendo salvo
@@ -143,11 +143,48 @@ export const gameStorage = {
         type: typeof stateToSave.gameStarted,
       });
 
-      await set(ref(database, "current-game"), stateToSave);
+      // FUNÇÃO CRÍTICA: Remover propriedades undefined/nulas que o Firebase não aceita
+      const cleanGameState = (obj: any): any => {
+        if (obj === null || obj === undefined) {
+          return null;
+        }
+
+        if (Array.isArray(obj)) {
+          return obj.map((item) => cleanGameState(item));
+        }
+
+        if (typeof obj === "object") {
+          const cleaned: any = {};
+          for (const [key, value] of Object.entries(obj)) {
+            // Só incluir se o valor não for undefined
+            if (value !== undefined) {
+              cleaned[key] = cleanGameState(value);
+            }
+          }
+          return cleaned;
+        }
+
+        return obj;
+      };
+
+      const cleanedState = cleanGameState(stateToSave);
+
+      console.log("🧹 [FIREBASE-SAVE] Estado LIMPO após remover undefined:");
+      console.log(JSON.stringify(cleanedState, null, 2));
+
+      await set(ref(database, "current-game"), cleanedState);
       console.log("✅ [FIREBASE-SAVE] Jogo salvo com SUCESSO no Firebase!");
       console.log("📁 [FIREBASE-SAVE] Caminho: current-game");
+
+      // Retornar o estado salvo para confirmação
+      return cleanedState;
     } catch (error) {
       console.error("❌ [FIREBASE-SAVE] ERRO ao salvar jogo:", error);
+      // Log mais detalhado do erro
+      if (error instanceof Error) {
+        console.error("❌ [FIREBASE-SAVE] Mensagem de erro:", error.message);
+        console.error("❌ [FIREBASE-SAVE] Stack trace:", error.stack);
+      }
       throw error;
     }
   },
