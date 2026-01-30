@@ -195,21 +195,42 @@ export default function MestrePage() {
 
   const saveGame = async (state: typeof gameState) => {
     try {
-      console.log("💾 Salvando jogo no Firebase:", {
+      console.log("💾 [MESTRE-SAVE] ======= SALVANDO NO FIREBASE =======");
+      console.log("💾 [MESTRE-SAVE] Estado sendo salvo:", {
         gameStarted: state.gameStarted,
         typeofGameStarted: typeof state.gameStarted,
-        blueTeam: state.blueTeam.length,
-        redTeam: state.redTeam.length,
+        isBoolean: typeof state.gameStarted === "boolean",
+        isTrue: state.gameStarted === true,
+        blueTeamLength: state.blueTeam.length,
+        redTeamLength: state.redTeam.length,
+        timestamp: new Date().toISOString(),
       });
+
+      // DEBUG: Verifique a estrutura completa
+      console.log("🔍 [MESTRE-SAVE] Estrutura completa (resumo):", {
+        hasBlueTeam: !!state.blueTeam,
+        hasRedTeam: !!state.redTeam,
+        blueTeamFirstPlayer: state.blueTeam[0],
+        allKeys: Object.keys(state),
+      });
+
       await gameStorage.saveGameState(state);
-      console.log("✅ Jogo salvo com sucesso!");
+      console.log("✅ [MESTRE-SAVE] Jogo salvo com SUCESSO no Firebase!");
     } catch (error) {
-      console.error("❌ Erro ao salvar jogo:", error);
+      console.error("❌ [MESTRE-SAVE] ERRO ao salvar jogo:", error);
     }
   };
 
+  // No useEffect que salva automaticamente, adicione logs:
   useEffect(() => {
     if (!loading && gameState) {
+      console.log(
+        "🔄 [MESTRE-AUTO-SAVE] useEffect disparado, salvando automaticamente...",
+      );
+      console.log("🔄 [MESTRE-AUTO-SAVE] gameState atual:", {
+        gameStarted: gameState.gameStarted,
+        type: typeof gameState.gameStarted,
+      });
       saveGame(gameState);
     }
   }, [gameState, loading]);
@@ -355,15 +376,30 @@ export default function MestrePage() {
   };
 
   const startGame = () => {
-    console.log("🎮 Iniciando partida...");
+    console.log("🎮 [MESTRE-START] ======= INICIANDO PARTIDA =======");
+    console.log("🎮 [MESTRE-START] Estado ANTES:", {
+      gameStarted: gameState.gameStarted,
+      type: typeof gameState.gameStarted,
+    });
+
     setGameState((prev) => {
       const newState = {
         ...prev,
-        gameStarted: true,
+        gameStarted: true, // BOOLEAN TRUE
       };
-      console.log("✅ gameStarted agora é:", newState.gameStarted);
+
+      console.log("🎮 [MESTRE-START] Estado DEPOIS (antes do Firebase):", {
+        gameStarted: newState.gameStarted,
+        type: typeof newState.gameStarted,
+        isExactlyTrue: newState.gameStarted === true,
+      });
+
       return newState;
     });
+
+    console.log(
+      "🎮 [MESTRE-START] setGameState chamado. Firebase será atualizado automaticamente.",
+    );
   };
 
   const endGame = () => {
@@ -569,7 +605,12 @@ export default function MestrePage() {
               </div>
 
               <button
-                onClick={startGame}
+                onClick={() => {
+                  console.log(
+                    "🖱️ [MESTRE-CLICK] Botão 'Iniciar Partida' CLICADO",
+                  );
+                  startGame();
+                }}
                 className="w-full bg-green-600 hover:bg-green-700 text-white px-8 py-4 rounded-lg font-bold text-xl flex items-center justify-center gap-3 transition-all transform hover:scale-105 shadow-lg"
               >
                 ▶️ Iniciar Partida

@@ -117,21 +117,37 @@ export const gameStorage = {
   // Salvar estado do jogo
   async saveGameState(gameState: any) {
     try {
+      // DEBUG: Log completo do que está sendo salvo
+      console.log("🔥 [FIREBASE-SAVE] Iniciando salvamento do jogo");
+      console.log(
+        "🔥 [FIREBASE-SAVE] Estado completo a ser salvo:",
+        JSON.stringify(gameState, null, 2),
+      );
+      console.log(
+        "🔥 [FIREBASE-SAVE] gameStarted value:",
+        gameState.gameStarted,
+      );
+      console.log(
+        "🔥 [FIREBASE-SAVE] gameStarted type:",
+        typeof gameState.gameStarted,
+      );
+
       // Garantir que gameStarted seja boolean
       const stateToSave = {
         ...gameState,
         gameStarted: Boolean(gameState.gameStarted),
       };
 
-      console.log("💾 Salvando estado do jogo:", {
+      console.log("🔥 [FIREBASE-SAVE] Estado após conversão:", {
         gameStarted: stateToSave.gameStarted,
         type: typeof stateToSave.gameStarted,
       });
 
       await set(ref(database, "current-game"), stateToSave);
-      console.log("✅ Jogo salvo no Firebase");
+      console.log("✅ [FIREBASE-SAVE] Jogo salvo com SUCESSO no Firebase!");
+      console.log("📁 [FIREBASE-SAVE] Caminho: current-game");
     } catch (error) {
-      console.error("❌ Erro ao salvar jogo:", error);
+      console.error("❌ [FIREBASE-SAVE] ERRO ao salvar jogo:", error);
       throw error;
     }
   },
@@ -139,19 +155,29 @@ export const gameStorage = {
   // Carregar estado do jogo
   async loadGameState() {
     try {
+      console.log("🔥 [FIREBASE-LOAD] Buscando jogo do Firebase...");
       const snapshot = await get(ref(database, "current-game"));
+
       if (snapshot.exists()) {
         const data = snapshot.val();
-        console.log("📥 Jogo carregado do Firebase:", {
+        console.log("✅ [FIREBASE-LOAD] Jogo ENCONTRADO no Firebase:", {
+          exists: true,
           gameStarted: data.gameStarted,
           type: typeof data.gameStarted,
+          hasBlueTeam: !!data.blueTeam,
+          hasRedTeam: !!data.redTeam,
+          blueTeamLength: data.blueTeam?.length || 0,
+          redTeamLength: data.redTeam?.length || 0,
         });
         return data;
       }
-      console.log("📭 Nenhum jogo salvo no Firebase");
+
+      console.log(
+        "⚠️ [FIREBASE-LOAD] Nenhum jogo salvo no Firebase (snapshot não existe)",
+      );
       return null;
     } catch (error) {
-      console.error("❌ Erro ao carregar jogo:", error);
+      console.error("❌ [FIREBASE-LOAD] ERRO ao carregar jogo:", error);
       throw error;
     }
   },
@@ -160,26 +186,54 @@ export const gameStorage = {
   onGameStateChange(callback: (gameState: any) => void) {
     const gameRef = ref(database, "current-game");
 
-    console.log("🔔 Configurando listener para current-game");
+    console.log(
+      "🔔 [FIREBASE-LISTENER] Configurando listener REAL-TIME para 'current-game'",
+    );
 
-    onValue(gameRef, (snapshot) => {
-      console.log("📡 Firebase disparou onValue - current-game");
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        console.log("📦 Dados recebidos do Firebase:", {
-          hasData: true,
-          gameStarted: data.gameStarted,
-          type: typeof data.gameStarted,
-        });
-        callback(data);
-      } else {
-        console.log("📭 Nenhum dado no Firebase - current-game");
-        callback(null);
-      }
-    });
+    const unsubscribe = onValue(
+      gameRef,
+      (snapshot) => {
+        console.log(
+          "📡 [FIREBASE-LISTENER] 🔥 EVENTO DISPARADO! onValue chamado",
+        );
+
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+          console.log("✅ [FIREBASE-LISTENER] Dados RECEBIDOS do Firebase:", {
+            exists: true,
+            timestamp: new Date().toISOString(),
+            gameStarted: data.gameStarted,
+            typeOfGameStarted: typeof data.gameStarted,
+            isTrue: data.gameStarted === true,
+            isBooleanTrue:
+              data.gameStarted === true &&
+              typeof data.gameStarted === "boolean",
+            path: snapshot.ref.toString(),
+          });
+
+          // DEBUG EXTRA: Verifique a estrutura completa
+          console.log("🔍 [FIREBASE-LISTENER] Estrutura completa:", {
+            keys: Object.keys(data),
+            blueTeamKeys: data.blueTeam
+              ? Object.keys(data.blueTeam[0] || {})
+              : "no blueTeam",
+          });
+
+          callback(data);
+        } else {
+          console.log(
+            "⚠️ [FIREBASE-LISTENER] Nenhum dado no Firebase (snapshot não existe)",
+          );
+          callback(null);
+        }
+      },
+      (error) => {
+        console.error("❌ [FIREBASE-LISTENER] ERRO no listener:", error);
+      },
+    );
 
     return () => {
-      console.log("🧹 Removendo listener do Firebase - current-game");
+      console.log("🧹 [FIREBASE-LISTENER] Removendo listener do Firebase");
       off(gameRef);
     };
   },

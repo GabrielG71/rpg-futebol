@@ -16,6 +16,8 @@ import {
   X,
   Eye,
   EyeOff,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 
 interface Player {
@@ -37,7 +39,7 @@ interface GameState {
   displayTime: string;
   score: { blue: number; red: number };
   fieldImage?: string;
-  gameStarted?: boolean;
+  gameStarted?: boolean | string; // Aceita boolean ou string
 }
 
 interface RealPlayer {
@@ -59,6 +61,10 @@ export default function JogadorPage() {
   const [editingName, setEditingName] = useState(false);
   const [tempName, setTempName] = useState("");
   const [debugMode, setDebugMode] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<
+    "connecting" | "connected" | "disconnected"
+  >("connecting");
+  const [lastError, setLastError] = useState<string | null>(null);
 
   // IDs do usuário
   const [userId, setUserId] = useState<string>("");
@@ -69,27 +75,58 @@ export default function JogadorPage() {
   useEffect(() => {
     if (!isLoaded) return;
 
-    if (user) {
-      // Usar ID do Clerk
-      const clerkId = user.id;
-      setUserId(clerkId);
+    const initializeUser = () => {
+      if (user) {
+        // Usar ID do Clerk
+        const clerkId = user.id;
+        setUserId(clerkId);
 
-      // Gerar nome e avatar
-      const savedName = localStorage.getItem(`player-name:${clerkId}`);
-      const savedAvatar = localStorage.getItem(`player-avatar:${clerkId}`);
+        // Gerar nome e avatar
+        const savedName = localStorage.getItem(`player-name:${clerkId}`);
+        const savedAvatar = localStorage.getItem(`player-avatar:${clerkId}`);
 
-      if (savedName) {
-        setUserName(savedName);
+        if (savedName) {
+          setUserName(savedName);
+        } else {
+          const defaultName =
+            user.firstName ||
+            user.username ||
+            `Jogador${Math.floor(Math.random() * 1000)}`;
+          setUserName(defaultName);
+          localStorage.setItem(`player-name:${clerkId}`, defaultName);
+        }
+
+        if (savedAvatar) {
+          setUserAvatar(savedAvatar);
+        } else {
+          const avatars = [
+            "👤",
+            "⚽",
+            "🥅",
+            "👟",
+            "🦵",
+            "🧤",
+            "🎯",
+            "🚀",
+            "⭐",
+            "🏆",
+          ];
+          const randomAvatar =
+            avatars[Math.floor(Math.random() * avatars.length)];
+          setUserAvatar(randomAvatar);
+          localStorage.setItem(`player-avatar:${clerkId}`, randomAvatar);
+        }
+
+        // Salvar role
+        localStorage.setItem(`user-role:${clerkId}`, "jogador");
+        console.log("✅ Usuário Clerk inicializado:", {
+          id: clerkId,
+          name: userName,
+        });
       } else {
-        const defaultName =
-          user.firstName || `Jogador${Math.floor(Math.random() * 1000)}`;
-        setUserName(defaultName);
-        localStorage.setItem(`player-name:${clerkId}`, defaultName);
-      }
-
-      if (savedAvatar) {
-        setUserAvatar(savedAvatar);
-      } else {
+        // Usuário anônimo
+        const anonId = `anon-${Math.random().toString(36).substr(2, 9)}`;
+        const anonName = `Jogador${Math.floor(Math.random() * 1000)}`;
         const avatars = [
           "👤",
           "⚽",
@@ -102,58 +139,45 @@ export default function JogadorPage() {
           "⭐",
           "🏆",
         ];
-        const randomAvatar =
-          avatars[Math.floor(Math.random() * avatars.length)];
-        setUserAvatar(randomAvatar);
-        localStorage.setItem(`player-avatar:${clerkId}`, randomAvatar);
+        const anonAvatar = avatars[Math.floor(Math.random() * avatars.length)];
+
+        setUserId(anonId);
+        setUserName(anonName);
+        setUserAvatar(anonAvatar);
+
+        localStorage.setItem(`user-role:${anonId}`, "jogador");
+        localStorage.setItem(`player-name:${anonId}`, anonName);
+        localStorage.setItem(`player-avatar:${anonId}`, anonAvatar);
+
+        console.log("✅ Usuário anônimo inicializado:", {
+          id: anonId,
+          name: anonName,
+        });
       }
 
-      // Salvar role
-      localStorage.setItem(`user-role:${clerkId}`, "jogador");
+      setLoading(false);
+    };
 
-      // Registrar usuário
-      registerUser(clerkId, userName, userAvatar);
-    } else {
-      // Usuário anônimo
-      const anonId = `anon-${Math.random().toString(36).substr(2, 9)}`;
-      const anonName = `Jogador${Math.floor(Math.random() * 1000)}`;
-      const avatars = [
-        "👤",
-        "⚽",
-        "🥅",
-        "👟",
-        "🦵",
-        "🧤",
-        "🎯",
-        "🚀",
-        "⭐",
-        "🏆",
-      ];
-      const anonAvatar = avatars[Math.floor(Math.random() * avatars.length)];
-
-      setUserId(anonId);
-      setUserName(anonName);
-      setUserAvatar(anonAvatar);
-
-      localStorage.setItem(`user-role:${anonId}`, "jogador");
-      localStorage.setItem(`player-name:${anonId}`, anonName);
-      localStorage.setItem(`player-avatar:${anonId}`, anonAvatar);
-
-      registerUser(anonId, anonName, anonAvatar);
-    }
-
-    setLoading(false);
+    initializeUser();
   }, [isLoaded, user]);
 
   // Registrar usuário no Firebase
   const registerUser = async (id: string, name: string, avatar: string) => {
     try {
       await gameStorage.registerPlayer(id, name, false, avatar);
-      console.log("✅ Jogador registrado:", { id, name, avatar });
+      console.log("✅ Jogador registrado no Firebase:", { id, name, avatar });
     } catch (error) {
       console.error("❌ Erro ao registrar jogador:", error);
+      setLastError("Erro ao registrar no Firebase");
     }
   };
+
+  // Registrar usuário quando userId estiver disponível
+  useEffect(() => {
+    if (userId && userName && userAvatar) {
+      registerUser(userId, userName, userAvatar);
+    }
+  }, [userId, userName, userAvatar]);
 
   // Heartbeat - manter presença ativa
   useEffect(() => {
@@ -162,64 +186,109 @@ export default function JogadorPage() {
     const heartbeat = setInterval(async () => {
       try {
         await gameStorage.updatePlayerPresence(userId);
+        if (connectionStatus !== "connected") {
+          setConnectionStatus("connected");
+        }
       } catch (error) {
         console.error("❌ Erro no heartbeat:", error);
+        setConnectionStatus("disconnected");
       }
-    }, 3000);
+    }, 5000);
 
     return () => clearInterval(heartbeat);
-  }, [userId]);
+  }, [userId, connectionStatus]);
+
+  // Função para verificar se o jogo está iniciado (compatibilidade com string/boolean)
+  const isGameStarted = (game: GameState | null): boolean => {
+    if (!game) return false;
+
+    const started = game.gameStarted;
+    console.log("🔍 Verificando gameStarted:", {
+      value: started,
+      type: typeof started,
+      isBooleanTrue: started === true,
+      isStringTrue: started === "true",
+      isTruthy: !!started,
+    });
+
+    // Aceita boolean true ou string "true"
+    return started === true || started === "true";
+  };
 
   // Listener em tempo real para o estado do jogo
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) {
+      console.log("⏳ Aguardando userId para configurar listener...");
+      return;
+    }
 
-    console.log("🎮 Configurando listener do jogo para:", userId);
+    console.log("🎮 ======= CONFIGURANDO LISTENER DO JOGO =======");
+    console.log("🎮 UserID:", userId);
+    console.log("🎮 Usuário:", userName);
 
     const unsubscribe = gameStorage.onGameStateChange((fullGame: GameState) => {
-      console.log("📡 Dados recebidos do Firebase:", {
-        hasData: !!fullGame,
-        gameStarted: fullGame?.gameStarted,
-        timestamp: new Date().toLocaleTimeString(),
-        userId: userId,
-      });
-
-      setLastUpdate(new Date());
+      console.log("📡 ======= DADOS RECEBIDOS DO FIREBASE =======");
+      console.log("📡 Timestamp:", new Date().toISOString());
+      console.log("📡 Tempo local:", new Date().toLocaleTimeString());
+      console.log("📡 Dados brutos:", fullGame);
 
       if (!fullGame) {
-        console.log("❌ Nenhum dado do jogo recebido");
-        setGameState(null);
-        return;
-      }
-
-      // DEBUG: Log completo se debugMode estiver ativo
-      if (debugMode) {
-        console.log("🔍 DEBUG - Estado completo:", fullGame);
-        console.log("🔍 gameStarted type:", typeof fullGame.gameStarted);
-        console.log("🔍 gameStarted value:", fullGame.gameStarted);
-      }
-
-      // Verificar se o jogo foi iniciado
-      if (fullGame.gameStarted !== true) {
         console.log(
-          "⏸️ Partida não iniciada (gameStarted:",
-          fullGame.gameStarted,
-          ")",
+          "❌ Nenhum dado do jogo recebido (fullGame é null/undefined)",
         );
         setGameState(null);
+        setLastError("Nenhum jogo encontrado no servidor");
         return;
       }
 
-      console.log("✅ Partida INICIADA! Processando...");
+      // DEBUG: Log completo
+      console.log("🔍 Estrutura completa do jogo recebido:", {
+        hasGameStarted: !!fullGame.gameStarted,
+        gameStartedValue: fullGame.gameStarted,
+        gameStartedType: typeof fullGame.gameStarted,
+        isGameStartedBoolean: typeof fullGame.gameStarted === "boolean",
+        isGameStartedString: typeof fullGame.gameStarted === "string",
+        hasBlueTeam: !!fullGame.blueTeam,
+        hasRedTeam: !!fullGame.redTeam,
+        blueTeamLength: fullGame.blueTeam?.length || 0,
+        redTeamLength: fullGame.redTeam?.length || 0,
+      });
+
+      // Verificar se o jogo foi iniciado
+      if (!isGameStarted(fullGame)) {
+        console.log("⏸️ Partida NÃO iniciada no Firebase:", {
+          gameStarted: fullGame.gameStarted,
+          interpretedAsStarted: isGameStarted(fullGame),
+          userId: userId,
+        });
+        setGameState(null);
+        setLastError("Partida não iniciada pelo mestre");
+        return;
+      }
+
+      console.log("✅✅✅ PARTIDA INICIADA NO FIREBASE! ✅✅✅");
+      console.log("✅ Processando dados para o jogador...");
+
+      setConnectionStatus("connected");
+      setLastError(null);
+      setLastUpdate(new Date());
 
       // Filtrar jogadores visíveis
       const filteredGame = {
         ...fullGame,
         blueTeam: (fullGame.blueTeam || []).filter(
-          (p) => p.visibleTo && p.visibleTo.includes(userId),
+          (p) =>
+            p &&
+            p.visibleTo &&
+            Array.isArray(p.visibleTo) &&
+            p.visibleTo.includes(userId),
         ),
         redTeam: (fullGame.redTeam || []).filter(
-          (p) => p.visibleTo && p.visibleTo.includes(userId),
+          (p) =>
+            p &&
+            p.visibleTo &&
+            Array.isArray(p.visibleTo) &&
+            p.visibleTo.includes(userId),
         ),
       };
 
@@ -227,7 +296,19 @@ export default function JogadorPage() {
         blue: filteredGame.blueTeam.length,
         red: filteredGame.redTeam.length,
         total: filteredGame.blueTeam.length + filteredGame.redTeam.length,
+        userId: userId,
       });
+
+      // DEBUG: Mostrar quais jogadores são visíveis
+      if (debugMode) {
+        const allPlayers = [...filteredGame.blueTeam, ...filteredGame.redTeam];
+        console.log("🐛 DEBUG - Jogadores visíveis detalhados:");
+        allPlayers.forEach((p, i) => {
+          console.log(
+            `  ${i + 1}. ${p.id} - Nº ${p.number} - Atribuído a: ${p.assignedTo || "NPC"}`,
+          );
+        });
+      }
 
       setGameState(filteredGame);
     });
@@ -236,18 +317,24 @@ export default function JogadorPage() {
       console.log("🧹 Removendo listener do jogo");
       if (unsubscribe) unsubscribe();
     };
-  }, [userId, forceRefresh, debugMode]);
+  }, [userId, forceRefresh, debugMode, userName]);
 
   // Listener para jogadores conectados
   useEffect(() => {
+    if (!userId) return;
+
+    console.log("👥 Configurando listener para jogadores conectados");
+
     const unsubscribe = gameStorage.onPlayersChange((players) => {
+      console.log("👥 Jogadores conectados atualizados:", players.length);
       setRealPlayers(players);
     });
 
     return () => {
+      console.log("🧹 Removendo listener de jogadores");
       if (unsubscribe) unsubscribe();
     };
-  }, []);
+  }, [userId]);
 
   // Função para voltar ao menu
   const goToMenu = () => {
@@ -274,6 +361,7 @@ export default function JogadorPage() {
       console.log("✅ Nome atualizado no Firebase:", newName);
     } catch (error) {
       console.error("❌ Erro ao atualizar nome:", error);
+      setLastError("Erro ao atualizar nome");
     }
 
     setEditingName(false);
@@ -294,49 +382,93 @@ export default function JogadorPage() {
       );
     } catch (error) {
       console.error("❌ Erro ao atualizar status:", error);
+      setLastError("Erro ao atualizar status");
     }
   };
 
   // Forçar atualização manual
   const handleForceRefresh = async () => {
-    console.log("🔄 Forçando atualização manual...");
+    console.log("🔄 ======= FORÇANDO ATUALIZAÇÃO MANUAL =======");
     setForceRefresh((prev) => prev + 1);
+    setConnectionStatus("connecting");
 
     try {
       const fullGame = await gameStorage.loadGameState();
-      console.log("📦 Dados carregados manualmente:", {
+      console.log("📦 Dados carregados manualmente do Firebase:", {
         hasData: !!fullGame,
         gameStarted: fullGame?.gameStarted,
+        gameStartedType: typeof fullGame?.gameStarted,
+        timestamp: new Date().toISOString(),
       });
 
-      if (!fullGame || fullGame.gameStarted !== true) {
-        console.log("⚠️ Partida não iniciada após atualização manual");
+      if (!fullGame) {
+        console.log("⚠️ Nenhum jogo encontrado no Firebase");
         setGameState(null);
+        setLastError("Nenhum jogo encontrado");
         return;
       }
+
+      // Verificar se o jogo está iniciado
+      if (!isGameStarted(fullGame)) {
+        console.log("⚠️ Partida não iniciada após atualização manual");
+        setGameState(null);
+        setLastError("Partida não iniciada pelo mestre");
+        return;
+      }
+
+      console.log("✅ Jogo iniciado detectado!");
 
       const filteredGame = {
         ...fullGame,
         blueTeam: (fullGame.blueTeam || []).filter(
-          (p) => p.visibleTo && p.visibleTo.includes(userId),
+          (p) =>
+            p &&
+            p.visibleTo &&
+            Array.isArray(p.visibleTo) &&
+            p.visibleTo.includes(userId),
         ),
         redTeam: (fullGame.redTeam || []).filter(
-          (p) => p.visibleTo && p.visibleTo.includes(userId),
+          (p) =>
+            p &&
+            p.visibleTo &&
+            Array.isArray(p.visibleTo) &&
+            p.visibleTo.includes(userId),
         ),
       };
 
       setGameState(filteredGame);
       setLastUpdate(new Date());
-      console.log("✅ Dados atualizados manualmente!");
+      setConnectionStatus("connected");
+      setLastError(null);
+      console.log("✅✅✅ Dados atualizados manualmente com SUCESSO!");
     } catch (error) {
       console.error("❌ Erro ao atualizar manualmente:", error);
+      setConnectionStatus("disconnected");
+      setLastError("Erro de conexão com o servidor");
     }
   };
 
   // Debug function
   const toggleDebug = () => {
-    setDebugMode(!debugMode);
-    console.log(`🐛 Debug mode ${!debugMode ? "ativado" : "desativado"}`);
+    const newDebugMode = !debugMode;
+    setDebugMode(newDebugMode);
+    console.log(`🐛 Debug mode ${newDebugMode ? "ATIVADO" : "DESATIVADO"}`);
+  };
+
+  // Função para testar conexão
+  const testConnection = async () => {
+    console.log("🔧 Testando conexão com Firebase...");
+    try {
+      const testRef = ref(database, "connection-test");
+      await set(testRef, { timestamp: new Date().toISOString(), userId });
+      console.log("✅ Conexão com Firebase OK");
+      setConnectionStatus("connected");
+      return true;
+    } catch (error) {
+      console.error("❌ Falha na conexão com Firebase:", error);
+      setConnectionStatus("disconnected");
+      return false;
+    }
   };
 
   const getPlayerById = (id?: string) => realPlayers.find((p) => p.id === id);
@@ -344,7 +476,11 @@ export default function JogadorPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-white text-2xl">⚽ Carregando...</div>
+        <div className="text-center">
+          <div className="text-6xl mb-4 animate-bounce">⚽</div>
+          <div className="text-white text-2xl mb-2">Carregando...</div>
+          <div className="text-gray-400 text-sm">Inicializando jogador</div>
+        </div>
       </div>
     );
   }
@@ -353,56 +489,77 @@ export default function JogadorPage() {
   if (!gameState) {
     return (
       <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4">
-        <div className="text-center mb-8">
-          <div className="text-6xl mb-4">⚽</div>
+        <div className="text-center mb-8 max-w-2xl">
+          <div className="text-6xl mb-4">⏳</div>
           <div className="text-white text-2xl mb-2">
             Aguardando o mestre iniciar a partida...
           </div>
-          <div className="text-gray-400 text-sm mb-4">
-            O jogo aparecerá aqui assim que o mestre configurar tudo
-          </div>
 
-          {/* Status de sincronização */}
-          <div className="inline-flex items-center gap-2 bg-gray-800 px-4 py-2 rounded-lg mb-2">
-            <svg
-              className="w-4 h-4 text-green-400 animate-spin"
-              fill="none"
-              viewBox="0 0 24 24"
+          {/* Status de conexão */}
+          <div
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg mb-3"
+            style={{
+              backgroundColor:
+                connectionStatus === "connected"
+                  ? "#10b98120"
+                  : connectionStatus === "disconnected"
+                    ? "#ef444420"
+                    : "#f59e0b20",
+              border: `1px solid ${
+                connectionStatus === "connected"
+                  ? "#10b981"
+                  : connectionStatus === "disconnected"
+                    ? "#ef4444"
+                    : "#f59e0b"
+              }`,
+            }}
+          >
+            {connectionStatus === "connected" ? (
+              <Wifi className="w-4 h-4 text-green-400" />
+            ) : connectionStatus === "disconnected" ? (
+              <WifiOff className="w-4 h-4 text-red-400" />
+            ) : (
+              <div className="w-4 h-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
+            )}
+            <span
+              className={`text-sm ${
+                connectionStatus === "connected"
+                  ? "text-green-400"
+                  : connectionStatus === "disconnected"
+                    ? "text-red-400"
+                    : "text-yellow-400"
+              }`}
             >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              />
-            </svg>
-            <span className="text-green-400 text-sm">
-              Sincronizando em tempo real...
+              {connectionStatus === "connected"
+                ? "Conectado"
+                : connectionStatus === "disconnected"
+                  ? "Desconectado"
+                  : "Conectando..."}
             </span>
           </div>
 
-          {/* Última atualização */}
-          {lastUpdate && (
-            <div className="text-xs text-gray-500 mb-2">
-              Última verificação: {lastUpdate.toLocaleTimeString()}
-            </div>
-          )}
+          {/* Informações do usuário */}
+          <div className="text-xs text-gray-500 mb-4">
+            ID: {userId.substring(0, 12)}... | Nome: {userName}
+            {lastError && (
+              <div className="text-red-400 mt-1">Erro: {lastError}</div>
+            )}
+          </div>
 
-          <div className="text-xs text-gray-600 mb-6">
-            ID: {userId.substring(0, 15)}...
-            <button
-              onClick={toggleDebug}
-              className="ml-2 text-blue-400 hover:text-blue-300"
-            >
-              {debugMode ? "🐛 Debug ON" : "🐛 Debug OFF"}
-            </button>
+          {/* Instruções */}
+          <div className="bg-gray-800 rounded-lg p-4 mb-6 text-left">
+            <div className="text-white font-semibold mb-2">📋 O que fazer:</div>
+            <ol className="text-gray-300 text-sm list-decimal pl-5 space-y-1">
+              <li>
+                Peça ao mestre para <strong>iniciar a partida</strong>
+              </li>
+              <li>
+                Peça ao mestre para tornar jogadores{" "}
+                <strong>visíveis para você</strong>
+              </li>
+              <li>Clique em "Atualizar Agora" abaixo</li>
+              <li>Se continuar sem ver, clique em "Testar Conexão"</li>
+            </ol>
           </div>
         </div>
 
@@ -496,13 +653,23 @@ export default function JogadorPage() {
               )}
             </button>
 
-            <button
-              onClick={handleForceRefresh}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-bold flex items-center justify-center gap-2"
-            >
-              <RefreshCw className="w-5 h-5" />
-              Atualizar Agora
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={handleForceRefresh}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg font-bold flex items-center justify-center gap-2"
+              >
+                <RefreshCw className="w-5 h-5" />
+                Atualizar Agora
+              </button>
+
+              <button
+                onClick={testConnection}
+                className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-3 rounded-lg font-bold flex items-center justify-center gap-2"
+              >
+                <Wifi className="w-5 h-5" />
+                Testar Conexão
+              </button>
+            </div>
 
             <button
               onClick={goToMenu}
@@ -513,25 +680,53 @@ export default function JogadorPage() {
             </button>
           </div>
 
+          {/* Debug panel */}
+          <div className="mt-4 p-3 bg-gray-900 rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-gray-400 text-sm">Debug Tools</span>
+              <button
+                onClick={toggleDebug}
+                className={`text-xs px-2 py-1 rounded ${debugMode ? "bg-red-600" : "bg-gray-700"} text-white`}
+              >
+                {debugMode ? "🐛 ON" : "🐛 OFF"}
+              </button>
+            </div>
+
+            {debugMode && (
+              <div className="text-xs space-y-1">
+                <div className="text-gray-400">UserID: {userId}</div>
+                <div className="text-gray-400">Conexão: {connectionStatus}</div>
+                <button
+                  onClick={() => {
+                    console.log("=== DEBUG INFO ===");
+                    console.log("UserID:", userId);
+                    console.log("UserName:", userName);
+                    console.log("IsActive:", isActive);
+                    console.log("Connection:", connectionStatus);
+                    console.log("LastError:", lastError);
+                    console.log("LastUpdate:", lastUpdate);
+                    alert("Informações de debug copiadas para o console!");
+                  }}
+                  className="w-full mt-2 bg-gray-700 hover:bg-gray-600 text-white p-1 rounded text-xs"
+                >
+                  Log Debug Info
+                </button>
+              </div>
+            )}
+          </div>
+
           <div className="mt-4 p-3 bg-gray-700 rounded-lg">
             <div className="flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
               <div className="text-gray-300 text-xs">
-                <p className="font-semibold">Dica:</p>
-                <p>
-                  O mestre precisa: 1) Iniciar a partida, 2) Tornar jogadores
-                  visíveis para você
-                </p>
-                <p>Use "Atualizar Agora" quando o mestre fizer alterações.</p>
+                <p className="font-semibold">Dica de Depuração:</p>
+                <p>1. Abra o console do navegador (F12)</p>
+                <p>2. Ative o modo debug para ver logs detalhados</p>
+                <p>3. Verifique se o mestre realmente iniciou a partida</p>
+                <p>4. Peça ao mestre para verificar os logs no painel dele</p>
               </div>
             </div>
           </div>
-
-          <p className="text-gray-500 text-xs text-center mt-3">
-            {isActive
-              ? "O mestre poderá te atribuir a uma posição no campo"
-              : "Você pode assistir a partida sem participar"}
-          </p>
         </div>
       </div>
     );
@@ -604,6 +799,31 @@ export default function JogadorPage() {
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <div
+              className={`flex items-center gap-1 px-2 py-1 rounded text-xs ${
+                connectionStatus === "connected"
+                  ? "bg-green-900 text-green-300"
+                  : connectionStatus === "disconnected"
+                    ? "bg-red-900 text-red-300"
+                    : "bg-yellow-900 text-yellow-300"
+              }`}
+            >
+              {connectionStatus === "connected" ? (
+                <Wifi className="w-3 h-3" />
+              ) : connectionStatus === "disconnected" ? (
+                <WifiOff className="w-3 h-3" />
+              ) : (
+                <div className="w-3 h-3 border border-yellow-300 border-t-transparent rounded-full animate-spin" />
+              )}
+              <span>
+                {connectionStatus === "connected"
+                  ? "Conectado"
+                  : connectionStatus === "disconnected"
+                    ? "Desconectado"
+                    : "Conectando..."}
+              </span>
+            </div>
+
             <button
               onClick={handleForceRefresh}
               className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2"
@@ -632,7 +852,7 @@ export default function JogadorPage() {
         {/* Status e tempo da última atualização */}
         <div className="bg-gray-800 rounded-lg p-3 mb-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
                 <div
                   className={`w-3 h-3 rounded-full ${isActive ? "bg-green-400 animate-pulse" : "bg-gray-500"}`}
@@ -640,6 +860,11 @@ export default function JogadorPage() {
                 <span className="text-white text-sm">
                   {isActive ? "✅ Participante Ativo" : "👁️ Espectador"}
                 </span>
+              </div>
+              <div className="text-white text-sm">
+                👁️ {totalVisiblePlayers} jogador
+                {totalVisiblePlayers !== 1 ? "es" : ""} visível
+                {totalVisiblePlayers !== 1 ? "s" : ""}
               </div>
             </div>
 
@@ -696,45 +921,35 @@ export default function JogadorPage() {
           </div>
         </div>
 
-        {/* Contador de jogadores visíveis */}
-        <div className="bg-gray-800 rounded-lg p-4 md:p-6 mb-4 md:mb-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">👁️</span>
-              <div>
-                <div className="text-white font-semibold">
-                  {totalVisiblePlayers === 0
-                    ? "Nenhum jogador visível para você"
-                    : `Você está vendo ${totalVisiblePlayers} jogador${totalVisiblePlayers !== 1 ? "es" : ""}`}
-                </div>
-                <div className="text-gray-400 text-sm">
-                  {gameState.blueTeam.length} do {gameState.blueTeamName} •{" "}
-                  {gameState.redTeam.length} do {gameState.redTeamName}
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={handleForceRefresh}
-              className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded flex items-center gap-1"
-            >
-              <RefreshCw className="w-3 h-3" />
-              Atualizar
-            </button>
-          </div>
-        </div>
-
         {/* Campo de Jogo */}
         <div className="bg-gray-800 rounded-lg p-4 md:p-6">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-white font-bold">Campo de Jogo</h3>
-            <button
-              onClick={handleForceRefresh}
-              className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded flex items-center gap-1"
-            >
-              <RefreshCw className="w-3 h-3" />
-              Atualizar Campo
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleForceRefresh}
+                className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded flex items-center gap-1"
+              >
+                <RefreshCw className="w-3 h-3" />
+                Atualizar
+              </button>
+              {debugMode && (
+                <button
+                  onClick={() => {
+                    console.log("=== CAMPO DEBUG ===");
+                    console.log("GameState:", gameState);
+                    console.log("Blue Team:", gameState.blueTeam);
+                    console.log("Red Team:", gameState.redTeam);
+                    console.log("Ball:", gameState.ball);
+                    console.log("UserID:", userId);
+                    alert("Informações do campo copiadas para o console!");
+                  }}
+                  className="text-sm bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded flex items-center gap-1"
+                >
+                  🐛 Debug
+                </button>
+              )}
+            </div>
           </div>
 
           <div
@@ -772,7 +987,9 @@ export default function JogadorPage() {
                       visualizar. Peça ao mestre para:
                     </div>
                     <ol className="text-gray-300 text-sm text-left list-decimal pl-5 mb-4">
-                      <li>Clique em "Visível para Todos" no painel</li>
+                      <li>
+                        Clique em "Visível para Todos" no painel do mestre
+                      </li>
                       <li>
                         Ou configure a visibilidade manualmente nos jogadores
                       </li>
@@ -892,17 +1109,35 @@ export default function JogadorPage() {
           <div className="flex items-start gap-2">
             <AlertCircle className="w-4 h-4 text-yellow-300 mt-0.5 flex-shrink-0" />
             <div className="text-yellow-200 text-xs">
-              <p className="font-semibold">Como ver o campo:</p>
-              <p>1. Mestre deve iniciar a partida</p>
-              <p>2. Mestre deve tornar jogadores visíveis para você</p>
-              <p>3. Clique em "Atualizar" para sincronizar</p>
+              <p className="font-semibold">Problemas comuns e soluções:</p>
               <p>
-                4. Se ainda não ver, peça ao mestre para clicar em "Visível para
-                Todos"
+                1. Se não vê nada: Mestre deve clicar em "Visível para Todos"
+              </p>
+              <p>2. Se a tela travou: Clique em "Atualizar"</p>
+              <p>3. Se aparecer desconectado: Clique em "Testar Conexão"</p>
+              <p>
+                4. Para debug detalhado: Ative o modo 🐛 e abra o console (F12)
               </p>
             </div>
           </div>
         </div>
+
+        {/* Debug info footer */}
+        {debugMode && (
+          <div className="mt-4 p-3 bg-gray-900 rounded-lg text-xs">
+            <div className="text-gray-400 mb-2">🐛 Debug Info:</div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="text-gray-500">UserID: {userId}</div>
+              <div className="text-gray-500">
+                Jogadores visíveis: {totalVisiblePlayers}
+              </div>
+              <div className="text-gray-500">Conexão: {connectionStatus}</div>
+              <div className="text-gray-500">
+                Ativo: {isActive ? "Sim" : "Não"}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
